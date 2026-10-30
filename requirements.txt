@@ -6,4 +6,4 @@ ultralytics
 numpy
 torch
 torchvision
-
+python-multipart
