@@ -10,7 +10,7 @@ app = FastAPI()
 
 # YOLOモデルの読み込み（起動時に1度だけロード）
 # YOLO-Worldモデルを使用（指定したキーワードで検出できるモデル）
-model = YOLO('yolov8n-world.pt')
+model = YOLO('yolov8n.pt')
 
 @app.get("/")
 def read_root():
