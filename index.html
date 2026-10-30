@@ -12,7 +12,7 @@
     .container { max-width: 400px; margin: 0 auto; background: #1e1e1e; padding: 15px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
     video { width: 100%; height: 240px; background: #000; border-radius: 8px; object-fit: cover; margin-top: 10px; }
     #status { margin-top: 10px; font-size: 16px; font-weight: bold; color: #aaa; }
-    
+
     /* 検出画像のギャラリー用スタイル */
     #imageGallery {
       display: flex;
@@ -135,4 +135,41 @@
           }
         })
         .catch(err => {
-          
+          console.error("通信エラー:", err);
+          status.innerText = "通信エラーが発生しました";
+          status.style.color = "#ff4444";
+        });
+      }, 'image/jpeg', 0.6);
+    }
+
+    // キャプチャ画像をギャラリーに追加する関数
+    function saveCapturedImage(video) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 160;
+      canvas.height = 120;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      
+      const dataUrl = canvas.toDataURL('image/jpeg');
+
+      // 新しい画像を配列の先頭に追加
+      capturedImages.unshift(dataUrl);
+
+      // 最大10枚までに制限（古いものを削除）
+      if (capturedImages.length > 10) {
+        capturedImages.pop();
+      }
+
+      // 画面のギャラリー部分を再描画
+      const gallery = document.getElementById('imageGallery');
+      gallery.innerHTML = '';
+      capturedImages.forEach(src => {
+        const img = document.createElement('img');
+        img.src = src;
+        img.className = 'captured-thumb';
+        gallery.appendChild(img);
+      });
+    }
+  </script>
+</body>
+</html>
