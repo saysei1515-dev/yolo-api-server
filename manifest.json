@@ -1,1 +1,10 @@
+{
+  "name": "AI探偵カメラアプリ",
+  "short_name": "AI探偵",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#121212",
+  "theme_color": "#007bff",
+  "icons": []
+}
 
