@@ -10,8 +10,26 @@
     button { background: #007bff; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
     button:active { background: #0056b3; }
     .container { max-width: 400px; margin: 0 auto; background: #1e1e1e; padding: 15px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
-    video { width: 100%; height: 260px; background: #000; border-radius: 8px; object-fit: cover; margin-top: 10px; }
+    video { width: 100%; height: 240px; background: #000; border-radius: 8px; object-fit: cover; margin-top: 10px; }
     #status { margin-top: 10px; font-size: 16px; font-weight: bold; color: #aaa; }
+    
+    /* 検出画像のギャラリー用スタイル */
+    #imageGallery {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      justify-content: center;
+      margin-top: 10px;
+      max-height: 150px;
+      overflow-y: auto;
+    }
+    .captured-thumb {
+      width: 70px;
+      height: 50px;
+      object-fit: cover;
+      border-radius: 4px;
+      border: 2px solid #00ff00;
+    }
   </style>
 </head>
 <body>
@@ -30,6 +48,12 @@
     </div>
 
     <p id="status">ステータス: 待機中</p>
+
+    <!-- 検出した画像を蓄積して表示するエリア -->
+    <div style="margin-top: 15px; text-align: left;">
+      <h4 style="margin: 5px 0; font-size: 14px; color: #ccc;">📸 発見した瞬間の画像（最大10枚）</h4>
+      <div id="imageGallery"></div>
+    </div>
   </div>
 
   <script>
@@ -52,7 +76,6 @@
         status.innerText = "ステータス: 探索中（AI連携スタンバイ）";
 
         // 3秒ごとにフレームをキャプチャしてRenderへ送信するループ
-        // ※無料サーバーの負荷を考慮して少し間隔をあけています
         setInterval(() => {
           sendFrameToRender(video);
         }, 3000);
@@ -63,6 +86,9 @@
         alert("カメラを起動できませんでした。アプリの権限設定を確認してください。");
       }
     }
+
+    // 検出された画像を保存・表示する配列
+    let capturedImages = [];
 
     function sendFrameToRender(video) {
       if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
@@ -93,8 +119,12 @@
             // 見つかった場合
             status.innerText = `🎉 発見！ (${data.target})`;
             status.style.color = "#00ff00"; // 緑色
+
+            // ★見つかった瞬間の画像をキャプチャしてストックする
+            saveCapturedImage(video);
+
           } else {
-            // 見つからなかった場合（検出された他のものがあればそれも表示可能）
+            // 見つからなかった場合
             let detectedNames = data.detected.map(d => d.name).join(', ');
             if (detectedNames) {
               status.innerText = `👀 映っているもの: ${detectedNames}`;
@@ -105,12 +135,4 @@
           }
         })
         .catch(err => {
-          console.error("通信エラー:", err);
-          status.innerText = "通信エラーが発生しました";
-          status.style.color = "#ff4444";
-        });
-      }, 'image/jpeg', 0.6);
-    }
-  </script>
-</body>
-</html>
+          
