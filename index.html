@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI探偵カメラ（Androidアプリ版）</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; margin: 0; padding: 15px; background: #121212; color: #fff; }
+    input, button { font-size: 16px; padding: 12px; margin: 8px 0; width: 100%; max-width: 320px; box-sizing: border-box; }
+    button { background: #007bff; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
+    button:active { background: #0056b3; }
+    .container { max-width: 400px; margin: 0 auto; background: #1e1e1e; padding: 15px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+    video { width: 100%; height: 260px; background: #000; border-radius: 8px; object-fit: cover; margin-top: 10px; }
+    #status { margin-top: 10px; font-size: 14px; color: #aaa; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>🔍 AI探偵カメラ</h2>
+    
+    <div>
+      <input type="text" id="targetObject" value="person" placeholder="探すもの (例: person, cup)">
+    </div>
+    <div>
+      <button onclick="startCamera()">カメラ起動 &amp; 探索スタート</button>
+    </div>
+    
+    <div>
+      <video id="video" autoplay playsinline muted></video>
+    </div>
+    
+    <p id="status">ステータス: 待機中</p>
+  </div>
+
+  <script>
+    // Render上のあなたのバックエンドURLを設定
+    const RENDER_URL = "https://yolo-api-server-7.onrender.com/detect"; 
+
+    async function startCamera() {
+      const video = document.getElementById('video');
+      const status = document.getElementById('status');
+      
+      status.innerText = "ステータス: カメラを起動しています...";
+
+      try {
+        // Androidアプリ内であれば、ブラウザの制限なくスムーズにカメラが許可されます
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment' },
+          audio: false
+        });
+        
+        video.srcObject = stream;
+        status.innerText = "ステータス: 探索中（AI連携スタンバイ）";
+
+        // 1秒ごとにフレームをキャプチャしてRenderへ送信するループ
+        setInterval(() => {
+          sendFrameToRender(video);
+        }, 1000);
+
+      } catch (err) {
+        console.error(err);
+        status.innerText = "エラー: " + err.message;
+        alert("カメラを起動できませんでした。アプリの権限設定を確認してください。");
+      }
+    }
+
+    function sendFrameToRender(video) {
+      if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 320;
+      canvas.height = 240;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      canvas.toBlob(blob => {
+        const formData = new FormData();
+        formData.append('image', blob, 'capture.jpg');
+        formData.append('target', document.getElementById('targetObject').value);
+
+        // RenderのYOLOサーバーへ送信
+        fetch(RENDER_URL, {
+          method: 'POST',
+          body: formData
+        })
+        .then(res => res.json())
+        .then(data => {
+          console.log("AI判定結果:", data);
+          // 必要に応じてステータス表示を更新できます
+        })
+        .catch(err => {
+          console.error("通信エラー:", err);
+        });
+      }, 'image/jpeg', 0.6);
+    }
+  </script>
+</body>
+</html>
