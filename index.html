@@ -1,7 +1,5 @@
 <!DOCTYPE html>
 <html lang="ja">
-<link rel="manifest" href="data:application/manifest+json;charset=utf-8,%7B%22name%22%3A%22AI%E6%8E%A2%E5%81%B5%E3%82%AB%E3%83%A1%E3%83%A9%E3%82%A2%E3%83%97%E3%83%AA%E3%82%A2%E3%83%AB%E3%82%A4%E3%82%B9%E3%83%88%22%2C%22short_name%22%3A%22AI%E6%8E%A2%E5%81%B5%22%2C%22start_url%22%3A%22.%2Findex.html%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%23121212%22%2C%22theme_color%22%3A%22%23007bff%22%2C%22icons%22%3A%5B%5D%7D">
-
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -13,51 +11,51 @@
     button:active { background: #0056b3; }
     .container { max-width: 400px; margin: 0 auto; background: #1e1e1e; padding: 15px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
     video { width: 100%; height: 260px; background: #000; border-radius: 8px; object-fit: cover; margin-top: 10px; }
-    #status { margin-top: 10px; font-size: 14px; color: #aaa; }
+    #status { margin-top: 10px; font-size: 16px; font-weight: bold; color: #aaa; }
   </style>
 </head>
 <body>
   <div class="container">
     <h2>🔍 AI探偵カメラ</h2>
-    
+
     <div>
-      <input type="text" id="targetObject" value="person" placeholder="探すもの (例: person, cup)">
+      <input type="text" id="targetObject" value="person" placeholder="探すもの (例: person, cup, chair)">
     </div>
     <div>
       <button onclick="startCamera()">カメラ起動 &amp; 探索スタート</button>
     </div>
-    
+
     <div>
       <video id="video" autoplay playsinline muted></video>
     </div>
-    
+
     <p id="status">ステータス: 待機中</p>
   </div>
 
   <script>
-    // Render上のあなたのバックエンドURLを設定
+    // Render上のバックエンドURL
     const RENDER_URL = "https://yolo-api-server-7.onrender.com/detect"; 
 
     async function startCamera() {
       const video = document.getElementById('video');
       const status = document.getElementById('status');
-      
+
       status.innerText = "ステータス: カメラを起動しています...";
 
       try {
-        // Androidアプリ内であれば、ブラウザの制限なくスムーズにカメラが許可されます
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: 'environment' },
           audio: false
         });
-        
+
         video.srcObject = stream;
         status.innerText = "ステータス: 探索中（AI連携スタンバイ）";
 
-        // 1秒ごとにフレームをキャプチャしてRenderへ送信するループ
+        // 3秒ごとにフレームをキャプチャしてRenderへ送信するループ
+        // ※無料サーバーの負荷を考慮して少し間隔をあけています
         setInterval(() => {
           sendFrameToRender(video);
-        }, 1000);
+        }, 3000);
 
       } catch (err) {
         console.error(err);
@@ -80,6 +78,8 @@
         formData.append('image', blob, 'capture.jpg');
         formData.append('target', document.getElementById('targetObject').value);
 
+        const status = document.getElementById('status');
+
         // RenderのYOLOサーバーへ送信
         fetch(RENDER_URL, {
           method: 'POST',
@@ -88,10 +88,26 @@
         .then(res => res.json())
         .then(data => {
           console.log("AI判定結果:", data);
-          // 必要に応じてステータス表示を更新できます
+
+          if (data.found) {
+            // 見つかった場合
+            status.innerText = `🎉 発見！ (${data.target})`;
+            status.style.color = "#00ff00"; // 緑色
+          } else {
+            // 見つからなかった場合（検出された他のものがあればそれも表示可能）
+            let detectedNames = data.detected.map(d => d.name).join(', ');
+            if (detectedNames) {
+              status.innerText = `👀 映っているもの: ${detectedNames}`;
+            } else {
+              status.innerText = `🔍 探索中... (あたりを見渡しています)`;
+            }
+            status.style.color = "#aaa";
+          }
         })
         .catch(err => {
           console.error("通信エラー:", err);
+          status.innerText = "通信エラーが発生しました";
+          status.style.color = "#ff4444";
         });
       }, 'image/jpeg', 0.6);
     }
