@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI探偵カメラ（スマート学習版）</title>
+  <title>AI探偵カメラ</title>
   <link rel="stylesheet" href="style.css">
   
   <!-- MediaPipe Object Detection -->
@@ -42,7 +42,7 @@
       </div>
 
       <div class="camera-container">
-        <video id="video" autoplay playsinline></video>
+        <video id="video" autoplay muted playsinline></video>
         <canvas id="outputCanvas"></canvas>
       </div>
 
@@ -57,53 +57,33 @@
       <div id="imageGallery" class="gallery"></div>
     </div>
 
-    <!-- ── AI登録モード画面（手動切り抜き対応） ── -->
+    <!-- ── AI登録モード画面 ── -->
     <div id="trainView" class="view-section">
-      <h2>🧠 AI登録モード（手動切り抜き）</h2>
+      <h2>🧠 AI登録モード</h2>
       
       <div class="control-group">
         <label for="newObjectName">覚える名前:</label>
         <input type="text" id="newObjectName" placeholder="例: my_remote">
       </div>
 
-      <div id="angleGuideText" style="color: #00ff00; font-weight: bold; margin-bottom: 5px;">
-        📸 ステップ1: 枠内にアイテムを収めて撮影してください
-      </div>
-      <div id="angleCountText" style="font-size: 14px; color: #aaa; margin-bottom: 10px;">
-        現在の登録枚数: 正面(0/3) | 斜め(0/3) | 遠く(0/3)
-      </div>
+      <div id="trainStatus" class="status-box" style="margin-bottom: 10px;">ステータス: 待機中</div>
 
       <button id="trainCamStartBtn" class="primary-btn" onclick="startTrainCamera()">登録用カメラ起動</button>
       
-      <!-- カメラ映像 ＆ 切り抜き調整エリア -->
-      <div class="camera-container" style="position: relative; display: inline-block; margin-top: 10px;">
-        <video id="trainVideo" autoplay playsinline style="width: 100%; max-width: 300px; border-radius: 8px; display: block;"></video>
-        <!-- プレイヤーがスライダーで動かせる切り抜きガイド枠 -->
-        <div id="cropGuideBox" style="position: absolute; top: 25%; left: 35%; width: 30%; height: 50%; border: 2px dashed #00ff00; pointer-events: none; display: none;"></div>
+      <div class="camera-container">
+        <video id="trainVideo" autoplay muted playsinline></video>
       </div>
 
-      <!-- 撮影後の切り抜き位置・サイズ調整スライダー -->
-      <div id="cropControls" style="display: none; margin-top: 10px; background: #222; padding: 10px; border-radius: 8px;">
-        <p style="font-size: 12px; color: #aaa; margin: 0 0 5px 0;">スライダーでアイテムの形に枠を合わせてね</p>
-        <label style="font-size: 12px; color: #fff; display: block; margin-bottom: 4px;">サイズ: <input type="range" id="cropSizeRange" min="20" max="80" value="50" oninput="updateCropBox()"></label>
-        <label style="font-size: 12px; color: #fff; display: block; margin-bottom: 4px;">横位置: <input type="range" id="cropXRange" min="0" max="100" value="50" oninput="updateCropBox()"></label>
-        <label style="font-size: 12px; color: #fff; display: block; margin-bottom: 4px;">縦位置: <input type="range" id="cropYRange" min="0" max="100" value="50" oninput="updateCropBox()"></label>
-        
-        <button onclick="captureWithCrop()" style="margin-top: 8px; width: 100%; padding: 10px; background: #00ff00; color: #000; border: none; font-weight: bold; border-radius: 4px;">この範囲で切り抜いて撮影！</button>
-      </div>
-
-      <button id="captureAngleBtn" class="primary-btn" onclick="prepareCapture()" style="display:none; margin-top: 10px; background: #17a2b8;">このアングルの位置を合わせる</button>
+      <button id="captureAngleBtn" class="primary-btn" onclick="captureAngleImage()" style="display:none; background: #17a2b8;">📸 このアングルを撮影・学習する</button>
 
       <h3>🖼️ 撮影したトレーニング写真</h3>
       <div id="trainGallery" class="gallery"></div>
 
-      <button class="primary-btn" onclick="trainAIModel()" style="margin-top: 15px; background: #6f42c1;">✨ このデータでAIをトレーニングする</button>
-      <div id="trainStatus" class="status-box" style="margin-top: 10px;">ステータス: 待機中</div>
+      <button class="primary-btn" onclick="trainAIModel()" style="margin-top: 15px; background: #6f42c1;">✨ AIをトレーニングする</button>
     </div>
 
   </div>
 
-  <!-- メイン処理スクリプトの読み込み -->
   <script type="module" src="app.js"></script>
 </body>
 </html>
