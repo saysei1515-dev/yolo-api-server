@@ -212,23 +212,26 @@
               const score = Math.round(detection.categories[0].score * 100);
               detectedNames.push(`${categoryName}(${score}%)`);
 
-              if (categoryName.includes(currentSearchWord)) {
+              const isTarget = categoryName.includes(currentSearchWord);
+              if (isTarget) {
                 foundTarget = true;
-
-                const bbox = detection.bounding_box;
-                ctx.strokeStyle = "#00ff00";
-                ctx.lineWidth = 4;
-                ctx.strokeRect(bbox.origin_x, bbox.origin_y, bbox.width, bbox.height);
-
-                ctx.fillStyle = "#00ff00";
-                ctx.font = "16px sans-serif";
-                ctx.fillText(`${categoryName} ${score}%`, bbox.origin_x, bbox.origin_y > 20 ? bbox.origin_y - 5 : 20);
               }
+
+              // ステップ1: すべての検出物に枠とラベルを描画（ターゲットは緑、それ以外は白）
+              const bbox = detection.bounding_box;
+              ctx.strokeStyle = isTarget ? "#00ff00" : "#ffffff";
+              ctx.lineWidth = isTarget ? 4 : 2;
+              ctx.strokeRect(bbox.origin_x, bbox.origin_y, bbox.width, bbox.height);
+
+              ctx.fillStyle = isTarget ? "#00ff00" : "#ffffff";
+              ctx.font = "16px sans-serif";
+              ctx.fillText(`${categoryName} ${score}%`, bbox.origin_x, bbox.origin_y > 20 ? bbox.origin_y - 5 : 20);
             }
           }
 
+          // ステータス欄の表示（発見時は緑文字、通常時は検出リストを表示）
           if (foundTarget) {
-            status.innerText = `🎉 発見！ (${currentSearchWord})`;
+            status.innerText = `🎉 発見！ 検出中: ${detectedNames.join(', ')} (探す物: ${currentSearchWord})`;
             status.style.color = "#00ff00";
 
             const now = Date.now();
@@ -239,10 +242,11 @@
           } else {
             if (detectedNames.length > 0) {
               status.innerText = `👀 検出中: ${detectedNames.join(', ')} (探している物: ${currentSearchWord})`;
+              status.style.color = "#ccc";
             } else {
               status.innerText = `🔍 探索中... (探している物: ${currentSearchWord})`;
+              status.style.color = "#aaa";
             }
-            status.style.color = "#aaa";
           }
         } catch (e) {
           console.error("推論エラー:", e);
