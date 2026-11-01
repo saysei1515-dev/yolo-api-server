@@ -111,6 +111,7 @@
         const vision = await FilesetResolver.forVisionTasks(
           "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.2/wasm"
         );
+        // 元通りの安定した標準設定（scoreThreshold: 0.3）
         objectDetector = await ObjectDetector.createFromOptions(vision, {
           baseOptions: {
             modelAssetPath: `https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite`,
@@ -169,8 +170,6 @@
       }
     };
 
-    window.stopButton = function() {}; // ダミー
-
     window.stopCamera = function() {
       webcamRunning = false;
       const stream = video.srcObject;
@@ -214,12 +213,13 @@
               const score = Math.round(detection.categories[0].score * 100);
               detectedNames.push(`${categoryName}(${score}%)`);
 
+              // 探しているものと一致するかどうか
               const isTarget = categoryName.includes(currentSearchWord);
               if (isTarget) {
                 foundTarget = true;
               }
 
-              // 検出したすべての物体に枠と名前（％）を表示する
+              // 検出したすべての物体に枠と名前（％）を表示
               const bbox = detection.bounding_box;
               ctx.strokeStyle = isTarget ? "#00ff00" : "#aaaaaa";
               ctx.lineWidth = isTarget ? 4 : 2;
@@ -243,11 +243,10 @@
           } else {
             if (detectedNames.length > 0) {
               status.innerText = `👀 検出中: ${detectedNames.join(', ')} (探している物: ${currentSearchWord})`;
-              status.style.color = "#aaa";
             } else {
               status.innerText = `🔍 探索中... (探している物: ${currentSearchWord})`;
-              status.style.color = "#aaa";
             }
+            status.style.color = "#aaa";
           }
         } catch (e) {
           console.error("推論エラー:", e);
