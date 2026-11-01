@@ -169,7 +169,7 @@
       }
     };
 
-    window.stopButton = window.stopCamera = function() {
+    window.stopCamera = function() {
       webcamRunning = false;
       const stream = video.srcObject;
       if (stream) {
@@ -217,7 +217,8 @@
                 foundTarget = true;
               }
 
-              // ターゲットなら緑枠、それ以外は白枠
+              // 【追加機能】ご提示いただいた画像のように、すべての検出物に枠とラベルを描画
+              // ターゲットなら「緑の太枠」、それ以外の物体なら「白い枠」
               const bbox = detection.bounding_box;
               ctx.strokeStyle = isTarget ? "#00ff00" : "#ffffff";
               ctx.lineWidth = isTarget ? 4 : 2;
@@ -229,7 +230,7 @@
             }
           }
 
-          // 見つかったときは緑文字で詳細を表示、それ以外は通常の検出中表示
+          // 下部のステータス欄の表示（発見時は緑文字で詳細を表示、それ通常時は検出リストを表示）
           if (foundTarget) {
             status.innerText = `🎉 発見！ 検出中: ${detectedNames.join(', ')} (探す物: ${currentSearchWord})`;
             status.style.color = "#00ff00"; // 緑文字
@@ -242,10 +243,10 @@
           } else {
             if (detectedNames.length > 0) {
               status.innerText = `👀 検出中: ${detectedNames.join(', ')} (探している物: ${currentSearchWord})`;
-              status.style.color = "#ccc"; // 白っぽいグレー
+              status.style.color = "#ccc";
             } else {
               status.innerText = `🔍 探索中... (探している物: ${currentSearchWord})`;
-              status.style.color = "#aaa"; // 薄いグレー
+              status.style.color = "#aaa";
             }
           }
         } catch (e) {
