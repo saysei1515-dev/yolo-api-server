@@ -112,7 +112,7 @@ window.changeModel = async function() {
   const selectedModel = document.getElementById("modelSelect").value;
   const wasRunning = webcamRunning;
   if (webcamRunning) stopCamera();
-  
+
   try {
     objectDetector = await ObjectDetector.createFromOptions(vision, {
       baseOptions: {
@@ -136,7 +136,6 @@ window.updateTarget = function() {
   }
   currentSearchWord = inputVal;
 
-  // もし自分が学習させたカスタムアイテムの名前と一致していれば、カスタム探索モードに切り替える
   if (isTrained && currentSearchWord === customTargetName.toLowerCase()) {
     searchModeType = "custom";
     status.innerText = `🎯 カスタムAIモード: 自作アイテム「${customTargetName}」を探します！`;
@@ -215,15 +214,12 @@ function stopTrainCamera() {
   trainVideo.srcObject = null;
 }
 
-// 角度別の撮影＆KNNモデルへの特徴量学習
 window.captureAngleImage = async function() {
   if (!trainCameraRunning || !isCustomAIReady) return;
 
-  // 1. 映像からテンソル（画像データ）を切り出してMobileNetで特徴量を取り出し、KNNに学習させる
   const activation = mobilenetModel.infer(trainVideo, true);
-  classifier.addExample(activation, 0); // クラスID 0 として登録
+  classifier.addExample(activation, 0);
 
-  // 2. 視覚確認用のサムネイル画像作成
   const tempCanvas = document.createElement('canvas');
   tempCanvas.width = 160;
   tempCanvas.height = 120;
@@ -306,7 +302,6 @@ window.trainAIModel = function() {
   }, 1000);
 };
 
-// ── メインのリアルタイム推論ループ ──
 async function predictWebcam() {
   if (!webcamRunning) return;
 
@@ -324,18 +319,14 @@ async function predictWebcam() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       let foundTarget = false;
 
-      // モードに応じた推論処理
       if (searchModeType === "custom" && isTrained && classifier.getNumClasses() > 0) {
-        // --- ① 自作カスタムAIによる判定 ---
         const activation = mobilenetModel.infer(video, true);
         const result = await classifier.predictClass(activation);
 
-        // クラス0（登録したアイテム）と判定され、確信度が高い場合
         if (result.classIndex === 0 && result.confidences[0] > 0.75) {
           foundTarget = true;
           const conf = Math.round(result.confidences[0] * 100);
 
-          // 画面全体に枠と検出結果を表示
           ctx.strokeStyle = "#00ff00";
           ctx.lineWidth = 4;
           ctx.strokeRect(20, 20, canvas.width - 40, canvas.height - 40);
@@ -352,7 +343,6 @@ async function predictWebcam() {
         }
 
       } else {
-        // --- ② 標準MediaPipeによる判定 ---
         const startTimeMs = performance.now();
         const detections = objectDetector.detectForVideo(video, startTimeMs);
 
@@ -429,3 +419,5 @@ function saveCapturedImage() {
     gallery.appendChild(img);
   });
 }
+
+
