@@ -364,7 +364,7 @@ async function predictWebcam() {
         const result = await classifier.predictClass(activation);
 
         // クラス0（リモコン）であり、かつ信頼度が 0.85 以上のときだけ「発見！」にする
-        if (result.classIndex === 0 && result.confidences[0] > 0.85) {
+        if (result.classIndex === 0 && result.confidences[0] > 0.3) {
           foundTarget = true;
           const conf = Math.round(result.confidences[0] * 100);
 
