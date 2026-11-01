@@ -169,6 +169,8 @@
       }
     };
 
+    window.stopButton = function() {}; // ダミー
+
     window.stopCamera = function() {
       webcamRunning = false;
       const stream = video.srcObject;
@@ -212,14 +214,13 @@
               const score = Math.round(detection.categories[0].score * 100);
               detectedNames.push(`${categoryName}(${score}%)`);
 
-              // 探しているものと一致するかどうか
               const isTarget = categoryName.includes(currentSearchWord);
               if (isTarget) {
                 foundTarget = true;
               }
 
+              // 検出したすべての物体に枠と名前（％）を表示する
               const bbox = detection.bounding_box;
-              // ターゲットなら緑の太枠、それ以外は薄いグレーの枠でリアルタイム表示
               ctx.strokeStyle = isTarget ? "#00ff00" : "#aaaaaa";
               ctx.lineWidth = isTarget ? 4 : 2;
               ctx.strokeRect(bbox.origin_x, bbox.origin_y, bbox.width, bbox.height);
@@ -242,10 +243,11 @@
           } else {
             if (detectedNames.length > 0) {
               status.innerText = `👀 検出中: ${detectedNames.join(', ')} (探している物: ${currentSearchWord})`;
+              status.style.color = "#aaa";
             } else {
               status.innerText = `🔍 探索中... (探している物: ${currentSearchWord})`;
+              status.style.color = "#aaa";
             }
-            status.style.color = "#aaa";
           }
         } catch (e) {
           console.error("推論エラー:", e);
@@ -258,7 +260,6 @@
     }
 
     function saveCapturedImage() {
-      // 緑の枠が描画された状態のCanvasをそのまま画像として保存！
       const dataUrl = canvas.toDataURL('image/jpeg');
       capturedImages.unshift(dataUrl);
 
