@@ -38,7 +38,7 @@
       object-fit: cover;
     }
 
-    #status { margin-top: 10px; font-size: 15px; font-weight: bold; color: #aaa; word-break: break-all; }
+    #status { margin-top: 10px; font-size: 14px; font-weight: bold; color: #aaa; word-break: break-all; }
 
     #imageGallery {
       display: flex;
@@ -102,8 +102,8 @@
 
     let capturedImages = [];
     let lastCaptureTime = 0;
-    let lastVideoTime = -1;
     let currentSearchWord = "cup";
+    let loopCount = 0; // デバッグ用カウンター
 
     async function initializeAImodel() {
       status.innerText = "ステータス: AIモデルをダウンロード中...";
@@ -114,7 +114,7 @@
         objectDetector = await ObjectDetector.createFromOptions(vision, {
           baseOptions: {
             modelAssetPath: `https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite`,
-            delegate: "CPU" // WebViewでも確実なCPUモード
+            delegate: "CPU"
           },
           scoreThreshold: 0.3,
           runningMode: runningMode
@@ -126,7 +126,7 @@
         status.style.color = "#00ff00";
       } catch (err) {
         console.error(err);
-        status.innerText = "エラー: AIのロードに失敗しました";
+        status.innerText = "エラー(モデル初期化): " + err.message;
         status.style.color = "#ff4444";
       }
     }
@@ -155,17 +155,20 @@
         });
 
         video.srcObject = stream;
+        await video.play().catch(e => console.log("play error:", e));
+
         webcamRunning = true;
         startButton.style.display = "none";
         stopButton.style.display = "block";
-        status.innerText = `ステータス: 探索中... (${currentSearchWord})`;
+        loopCount = 0;
 
-        // 【改善】onloadeddataイベントに頼らず、カメラ起動直後に直接ループを強制スタート
+        // ループ開始
         predictWebcam();
 
       } catch (err) {
         console.error(err);
-        alert("カメラを起動できませんでした。");
+        status.innerText = "エラー(カメラ起動): " + err.message;
+        status.style.color = "#ff4444";
       }
     };
 
@@ -187,6 +190,8 @@
     async function predictWebcam() {
       if (!webcamRunning) return;
 
+      loopCount++;
+
       if (video.videoWidth > 0 && video.videoHeight > 0) {
         if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
           canvas.width = video.videoWidth;
@@ -196,7 +201,7 @@
 
       try {
         const startTimeMs = performance.now();
-        // 映像が有効であれば推論を実行
+        // WebViewでも安全に推論を実行
         if (video.readyState >= 2) {
           const detections = objectDetector.detectForVideo(video, startTimeMs);
 
@@ -216,7 +221,6 @@
                 foundTarget = true;
               }
 
-              // すべての検出物に枠とラベルを描画
               const bbox = detection.bounding_box;
               ctx.strokeStyle = isTarget ? "#00ff00" : "#ffffff";
               ctx.lineWidth = isTarget ? 4 : 2;
@@ -229,7 +233,7 @@
           }
 
           if (foundTarget) {
-            status.innerText = `🎉 発見！ 検出中: ${detectedNames.join(', ')} (探す物: ${currentSearchWord})`;
+            status.innerText = `🎉 発見(${loopCount})！ 検出: ${detectedNames.join(', ')}`;
             status.style.color = "#00ff00";
 
             const now = Date.now();
@@ -239,16 +243,21 @@
             }
           } else {
             if (detectedNames.length > 0) {
-              status.innerText = `👀 検出中: ${detectedNames.join(', ')} (探している物: ${currentSearchWord})`;
+              status.innerText = `👀 検出中(${loopCount}): ${detectedNames.join(', ')}`;
               status.style.color = "#ccc";
             } else {
-              status.innerText = `🔍 探索中... (探している物: ${currentSearchWord})`;
+              status.innerText = `🔍 探索中...(${loopCount}) 対象: ${currentSearchWord}`;
               status.style.color = "#aaa";
             }
           }
+        } else {
+          status.innerText = `⏳ ビデオ読込待ち... (${loopCount})`;
+          status.style.color = "#ffaa00";
         }
       } catch (e) {
         console.error("推論エラー:", e);
+        status.innerText = `⚠️ エラー: ${e.message}`;
+        status.style.color = "#ff4444";
       }
 
       if (webcamRunning) {
