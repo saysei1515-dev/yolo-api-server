@@ -38,7 +38,7 @@
       object-fit: cover;
     }
 
-    #status { margin-top: 10px; font-size: 14px; font-weight: bold; color: #aaa; word-break: break-all; }
+    #status { margin-top: 10px; font-size: 15px; font-weight: bold; color: #aaa; word-break: break-all; }
 
     #imageGallery {
       display: flex;
@@ -103,7 +103,6 @@
     let capturedImages = [];
     let lastCaptureTime = 0;
     let currentSearchWord = "cup";
-    let loopCount = 0; // デバッグ用カウンター
 
     async function initializeAImodel() {
       status.innerText = "ステータス: AIモデルをダウンロード中...";
@@ -126,7 +125,7 @@
         status.style.color = "#00ff00";
       } catch (err) {
         console.error(err);
-        status.innerText = "エラー(モデル初期化): " + err.message;
+        status.innerText = "エラー: AIのロードに失敗しました";
         status.style.color = "#ff4444";
       }
     }
@@ -160,15 +159,13 @@
         webcamRunning = true;
         startButton.style.display = "none";
         stopButton.style.display = "block";
-        loopCount = 0;
+        status.innerText = `ステータス: 探索中... (${currentSearchWord})`;
 
-        // ループ開始
         predictWebcam();
 
       } catch (err) {
         console.error(err);
-        status.innerText = "エラー(カメラ起動): " + err.message;
-        status.style.color = "#ff4444";
+        alert("カメラを起動できませんでした。");
       }
     };
 
@@ -190,8 +187,6 @@
     async function predictWebcam() {
       if (!webcamRunning) return;
 
-      loopCount++;
-
       if (video.videoWidth > 0 && video.videoHeight > 0) {
         if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
           canvas.width = video.videoWidth;
@@ -201,7 +196,6 @@
 
       try {
         const startTimeMs = performance.now();
-        // WebViewでも安全に推論を実行
         if (video.readyState >= 2) {
           const detections = objectDetector.detectForVideo(video, startTimeMs);
 
@@ -221,19 +215,20 @@
                 foundTarget = true;
               }
 
+              // 【修正】origin_x/origin_y を正しい originX/originY に変更
               const bbox = detection.bounding_box;
               ctx.strokeStyle = isTarget ? "#00ff00" : "#ffffff";
               ctx.lineWidth = isTarget ? 4 : 2;
-              ctx.strokeRect(bbox.origin_x, bbox.origin_y, bbox.width, bbox.height);
+              ctx.strokeRect(bbox.originX, bbox.originY, bbox.width, bbox.height);
 
               ctx.fillStyle = isTarget ? "#00ff00" : "#ffffff";
               ctx.font = "16px sans-serif";
-              ctx.fillText(`${categoryName} ${score}%`, bbox.origin_x, bbox.origin_y > 20 ? bbox.origin_y - 5 : 20);
+              ctx.fillText(`${categoryName} ${score}%`, bbox.originX, bbox.originY > 20 ? bbox.originY - 5 : 20);
             }
           }
 
           if (foundTarget) {
-            status.innerText = `🎉 発見(${loopCount})！ 検出: ${detectedNames.join(', ')}`;
+            status.innerText = `🎉 発見！ 検出中: ${detectedNames.join(', ')} (探す物: ${currentSearchWord})`;
             status.style.color = "#00ff00";
 
             const now = Date.now();
@@ -243,21 +238,16 @@
             }
           } else {
             if (detectedNames.length > 0) {
-              status.innerText = `👀 検出中(${loopCount}): ${detectedNames.join(', ')}`;
+              status.innerText = `👀 検出中: ${detectedNames.join(', ')} (探している物: ${currentSearchWord})`;
               status.style.color = "#ccc";
             } else {
-              status.innerText = `🔍 探索中...(${loopCount}) 対象: ${currentSearchWord}`;
+              status.innerText = `🔍 探索中... (探している物: ${currentSearchWord})`;
               status.style.color = "#aaa";
             }
           }
-        } else {
-          status.innerText = `⏳ ビデオ読込待ち... (${loopCount})`;
-          status.style.color = "#ffaa00";
         }
       } catch (e) {
         console.error("推論エラー:", e);
-        status.innerText = `⚠️ エラー: ${e.message}`;
-        status.style.color = "#ff4444";
       }
 
       if (webcamRunning) {
