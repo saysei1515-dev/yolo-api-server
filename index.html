@@ -228,25 +228,26 @@
             }
           }
 
-          // 【改良】条件分岐の外（前）で作成した detectedNames を使って、常にパーセントを表示する
-          if (foundTarget) {
-            status.innerText = `🎉 発見！ 検出中: ${detectedNames.join(', ')} (探す物: ${currentSearchWord})`;
-            status.style.color = "#00ff00";
+          // ステータス表示をシンプルかつ確実に統一
+          if (detectedNames.length > 0) {
+            if (foundTarget) {
+              status.innerText = `🎉 発見！ 検出中: ${detectedNames.join(', ')} (探す物: ${currentSearchWord})`;
+              status.style.color = "#00ff00";
 
-            const now = Date.now();
-            if (now - lastCaptureTime > 3000) {
-              saveCapturedImage();
-              lastCaptureTime = now;
-            }
-          } else {
-            if (detectedNames.length > 0) {
+              const now = Date.now();
+              if (now - lastCaptureTime > 3000) {
+                saveCapturedImage();
+                lastCaptureTime = now;
+              }
+            } else {
               status.innerText = `👀 検出中: ${detectedNames.join(', ')} (探している物: ${currentSearchWord})`;
               status.style.color = "#ccc";
-            } else {
-              status.innerText = `🔍 探索中... (探している物: ${currentSearchWord})`;
-              status.style.color = "#aaa";
             }
+          } else {
+            status.innerText = `🔍 探索中... (探している物: ${currentSearchWord})`;
+            status.style.color = "#aaa";
           }
+
         } catch (e) {
           console.error("推論エラー:", e);
         }
