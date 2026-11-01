@@ -63,7 +63,7 @@
     <h2>🔍 AI探偵カメラ（ローカル）</h2>
 
     <div>
-      <input type="text" id="targetObject" value="cup" placeholder="探すもの (例: cup, cell phone)">
+      <input type="text" id="targetObject" value="cup" placeholder="探すもの (例: cup, book)">
       <div class="btn-group">
         <button class="btn-success" onclick="updateTarget()">決定</button>
       </div>
@@ -133,7 +133,6 @@
 
     initializeAImodel();
 
-    // 探すものを決定・更新する関数
     window.updateTarget = function() {
       const inputVal = document.getElementById("targetObject").value.trim().toLowerCase();
       if (inputVal === "") {
@@ -147,8 +146,6 @@
 
     window.startCamera = async function() {
       if (!objectDetector) return;
-
-      // 起動時に入力されている値も取得
       currentSearchWord = document.getElementById("targetObject").value.trim().toLowerCase();
 
       try {
@@ -215,23 +212,26 @@
               const score = Math.round(detection.categories[0].score * 100);
               detectedNames.push(`${categoryName}(${score}%)`);
 
-              if (categoryName.includes(currentSearchWord)) {
+              // 探しているものと一致するかどうか
+              const isTarget = categoryName.includes(currentSearchWord);
+              if (isTarget) {
                 foundTarget = true;
-
-                const bbox = detection.bounding_box;
-                ctx.strokeStyle = "#00ff00";
-                ctx.lineWidth = 4;
-                ctx.strokeRect(bbox.origin_x, bbox.origin_y, bbox.width, bbox.height);
-
-                ctx.fillStyle = "#00ff00";
-                ctx.font = "16px sans-serif";
-                ctx.fillText(`${categoryName} ${score}%`, bbox.origin_x, bbox.origin_y > 20 ? bbox.origin_y - 5 : 20);
               }
+
+              const bbox = detection.bounding_box;
+              // ターゲットなら緑の太枠、それ以外は薄いグレーの枠でリアルタイム表示
+              ctx.strokeStyle = isTarget ? "#00ff00" : "#aaaaaa";
+              ctx.lineWidth = isTarget ? 4 : 2;
+              ctx.strokeRect(bbox.origin_x, bbox.origin_y, bbox.width, bbox.height);
+
+              ctx.fillStyle = isTarget ? "#00ff00" : "#aaaaaa";
+              ctx.font = "16px sans-serif";
+              ctx.fillText(`${categoryName} ${score}%`, bbox.origin_x, bbox.origin_y > 20 ? bbox.origin_y - 5 : 20);
             }
           }
 
           if (foundTarget) {
-            status.innerText = `🎉 発見！ (${currentSearchWord})`;
+            status.innerText = `🎉 発見！ 検出中: ${detectedNames.join(', ')}`;
             status.style.color = "#00ff00";
 
             const now = Date.now();
@@ -258,13 +258,8 @@
     }
 
     function saveCapturedImage() {
-      const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = 160;
-      tempCanvas.height = 120;
-      const tempCtx = tempCanvas.getContext('2d');
-      tempCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
-
-      const dataUrl = tempCanvas.toDataURL('image/jpeg');
+      // 緑の枠が描画された状態のCanvasをそのまま画像として保存！
+      const dataUrl = canvas.toDataURL('image/jpeg');
       capturedImages.unshift(dataUrl);
 
       if (capturedImages.length > 10) {
