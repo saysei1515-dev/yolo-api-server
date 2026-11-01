@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI探偵カメラ（手動切り抜き版）</title>
+  <title>AI探偵カメラ（背景学習版）</title>
   <link rel="stylesheet" href="style.css">
   
   <!-- MediaPipe Object Detection -->
@@ -57,9 +57,9 @@
       <div id="imageGallery" class="gallery"></div>
     </div>
 
-    <!-- ── AI登録モード画面（手動切り抜き対応） ── -->
+    <!-- ── AI登録モード画面（背景学習対応） ── -->
     <div id="trainView" class="view-section">
-      <h2>🧠 AI登録モード（切り抜き学習）</h2>
+      <h2>🧠 AI登録モード（背景学習対応）</h2>
       
       <div class="control-group">
         <label for="newObjectName">覚える名前:</label>
@@ -84,12 +84,16 @@
         <label>縦位置: <input type="range" id="cropYRange" min="0" max="100" value="50" oninput="updateCropBox()"></label>
       </div>
 
-      <button id="captureAngleBtn" class="primary-btn" onclick="captureAngleImage()" style="display:none; background: #17a2b8;">📸 この枠の中身を撮影・学習する</button>
+      <!-- 2つの学習ボタンに分割 -->
+      <div id="trainButtonContainer" style="display:none; margin-top: 10px;">
+        <button class="primary-btn" onclick="captureTargetImage()" style="background: #28a745; margin-bottom: 5px;">📸 ① 枠内の「リモコン」を覚える (3枚以上)</button>
+        <button class="primary-btn" onclick="captureBackgroundImg()" style="background: #dc3545;">🖼️ ② 枠内の「何もない背景」を覚える (3枚以上)</button>
+      </div>
 
-      <h3>🖼️ 切り抜いたトレーニング写真</h3>
+      <h3>🖼️ 撮影したトレーニング写真</h3>
       <div id="trainGallery" class="gallery"></div>
 
-      <button class="primary-btn" onclick="trainAIModel()" style="margin-top: 15px; background: #6f42c1;">✨ AIをトレーニングする</button>
+      <button class="primary-btn" onclick="trainAIModel()" style="margin-top: 15px; background: #6f42c1;">✨ AIを完了する</button>
     </div>
 
   </div>
