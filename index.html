@@ -227,8 +227,9 @@
             }
           }
 
+          // 【修正】foundTarget（発見時）もパーセント付きの検出リストを緑色で表示する
           if (foundTarget) {
-            status.innerText = `🎉 発見！ (${currentSearchWord})`;
+            status.innerText = `🎉 発見！ 検出中: ${detectedNames.join(', ')} (探す物: ${currentSearchWord})`;
             status.style.color = "#00ff00";
 
             const now = Date.now();
