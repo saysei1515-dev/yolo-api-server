@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI探偵カメラ（履歴・枠ズレ修正版）</title>
+  <title>AI探偵カメラ（履歴クリア機能付き）</title>
   <link rel="stylesheet" href="style.css">
   
   <!-- MediaPipe Object Detection -->
@@ -43,7 +43,10 @@
 
     <div id="status" class="status-box">ステータス: AIモデルをロード中...</div>
 
-    <h3>📁 発見したアイテムの履歴</h3>
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px;">
+      <h3 style="margin: 0;">📁 発見したアイテムの履歴</h3>
+      <button onclick="clearGallery()" style="padding: 5px 10px; background: #dc3545; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">履歴をクリア</button>
+    </div>
     <div id="imageGallery" class="gallery"></div>
   </div>
 
