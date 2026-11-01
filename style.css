@@ -102,6 +102,37 @@ canvas#outputCanvas {
   pointer-events: none;
 }
 
+/* ── 手動切り抜きガイド枠 ── */
+#cropGuideBox {
+  position: absolute;
+  top: 25%;
+  left: 25%;
+  width: 50%;
+  height: 50%;
+  border: 2px dashed #00ff00;
+  pointer-events: none;
+  display: none;
+  box-sizing: border-box;
+}
+
+.crop-controls {
+  background: #222;
+  padding: 10px;
+  border-radius: 8px;
+  margin-top: 10px;
+}
+
+.crop-controls label {
+  font-size: 12px;
+  color: #fff;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.crop-controls input[type="range"] {
+  width: 100%;
+}
+
 .primary-btn {
   width: 100%;
   padding: 12px;
