@@ -14,6 +14,7 @@ const stopButton = document.getElementById("stopButton");
 
 let lastVideoTime = -1;
 let currentSearchWord = "cup";
+let lastSaveTime = 0; // 履歴の連続保存を防ぐためのタイマー
 
 // MediaPipe公式のLiteモデルのパス
 const modelPaths = {
@@ -137,14 +138,46 @@ window.stopCamera = function() {
   status.style.color = "#aaa";
 };
 
+// 発見したときの画像を履歴に保存する関数
+function saveFoundImage(bbox) {
+  const gallery = document.getElementById("imageGallery");
+  if (!gallery) return;
+
+  const tempCanvas = document.createElement("canvas");
+  tempCanvas.width = bbox.width;
+  tempCanvas.height = bbox.height;
+  const tempCtx = tempCanvas.getContext("2d");
+
+  // ビデオ映像から検出部分を切り出し
+  tempCtx.drawImage(
+    video,
+    bbox.originX, bbox.originY, bbox.width, bbox.height,
+    0, 0, bbox.width, bbox.height
+  );
+
+  const img = document.createElement("img");
+  img.src = tempCanvas.toDataURL("image/jpeg");
+  img.style.width = "80px";
+  img.style.height = "80px";
+  img.style.objectFit = "cover";
+  img.style.borderRadius = "8px";
+  img.style.border = "2px solid #00ff00";
+
+  gallery.prepend(img);
+}
+
 // リアルタイム推論
 async function predictWebcam() {
   if (!webcamRunning) return;
 
   if (video.videoWidth > 0 && video.videoHeight > 0) {
-    if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
+    // 画面上の実際の表示サイズにキャンバスを合わせる
+    const displayWidth = video.clientWidth;
+    const displayHeight = video.clientHeight;
+
+    if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
+      canvas.width = displayWidth;
+      canvas.height = displayHeight;
     }
   }
 
@@ -160,6 +193,10 @@ async function predictWebcam() {
 
       let detectedNames = [];
       if (detections && detections.detections) {
+        // 元動画サイズから画面表示サイズへの比率を計算（枠のズレ解消）
+        const scaleX = canvas.width / video.videoWidth;
+        const scaleY = canvas.height / video.videoHeight;
+
         for (let detection of detections.detections) {
           const categoryName = detection.categories[0].categoryName.toLowerCase();
           const score = Math.round(detection.categories[0].score * 100);
@@ -168,13 +205,26 @@ async function predictWebcam() {
           if (categoryName.includes(currentSearchWord)) {
             foundTarget = true;
             const bbox = detection.boundingBox;
+            
+            const x = bbox.originX * scaleX;
+            const y = bbox.originY * scaleY;
+            const width = bbox.width * scaleX;
+            const height = bbox.height * scaleY;
+
             ctx.strokeStyle = "#00ff00";
             ctx.lineWidth = 4;
-            ctx.strokeRect(bbox.originX, bbox.originY, bbox.width, bbox.height);
+            ctx.strokeRect(x, y, width, height);
 
             ctx.fillStyle = "#00ff00";
             ctx.font = "16px sans-serif";
-            ctx.fillText(`${categoryName} ${score}%`, bbox.originX, bbox.originY > 20 ? bbox.originY - 5 : 20);
+            ctx.fillText(`${categoryName} ${score}%`, x, y > 20 ? y - 5 : 20);
+
+            // 3秒に1回まで、見つけた瞬間を履歴に自動保存（写真が連打されるのを防止）
+            const now = Date.now();
+            if (now - lastSaveTime > 3000) {
+              saveFoundImage(bbox);
+              lastSaveTime = now;
+            }
           }
         }
       }
