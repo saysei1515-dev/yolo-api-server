@@ -217,6 +217,7 @@
                 foundTarget = true;
               }
 
+              // 枠と名前（％）をキャンバスに描画
               const bbox = detection.bounding_box;
               ctx.strokeStyle = isTarget ? "#00ff00" : "#aaaaaa";
               ctx.lineWidth = isTarget ? 4 : 2;
@@ -228,8 +229,9 @@
             }
           }
 
+          // ステータスに検出されたオブジェクトと確率を必ず表示する
           if (foundTarget) {
-            status.innerText = `🎉 発見！ (${currentSearchWord})`;
+            status.innerText = `🎉 発見！ 検出中: ${detectedNames.join(', ')}`;
             status.style.color = "#00ff00";
 
             const now = Date.now();
