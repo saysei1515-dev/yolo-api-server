@@ -1,10 +1,21 @@
 import { ObjectDetector, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.2";
+// ブラウザ上で超高速に画像分類・学習を行うためのTensorFlow.jsとKNN分類器を読み込み
+import * as tf from "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js";
+import * as knnClassifier from "https://cdn.jsdelivr.net/npm/@tensorflow-models/knn-classifier@1.2.2/dist/knn-classifier.min.js";
+import * as mobilenet from "https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.0/dist/mobilenet.min.js";
 
 let objectDetector = undefined;
 let runningMode = "VIDEO";
 let webcamRunning = false;
 let trainCameraRunning = false;
 let vision = undefined;
+
+// カスタムAI学習用の変数
+let classifier = undefined;
+let mobilenetModel = undefined;
+let isCustomAIReady = false;
+let isTrained = false;
+let customTargetName = "";
 
 const video = document.getElementById("video");
 const trainVideo = document.getElementById("trainVideo");
@@ -18,10 +29,10 @@ let capturedImages = [];
 let lastCaptureTime = 0;
 let lastVideoTime = -1;
 let currentSearchWord = "cup";
+let searchModeType = "standard"; // "standard" または "custom"
 
 // 登録用データの管理
 let trainingData = {
-  name: "",
   front: [],  // 正面
   angle: [],  // 斜め
   far: []     // 遠く/離れ
@@ -56,30 +67,37 @@ window.switchView = function(viewName) {
   }
 };
 
-async function initializeAImodel(modelKey) {
+// 初期化：MediaPipeと、カスタム学習用のMobileNet/KNNモデルを同時にロード
+async function initializeAllModels() {
   startButton.disabled = true;
-  status.innerText = `ステータス: ${modelKey} モデルを読み込み中...`;
+  status.innerText = "ステータス: AIモデル（標準＆カスタム）をロード中...";
   status.style.color = "#aaa";
 
   try {
+    // 1. MediaPipeの初期化
     if (!vision) {
       vision = await FilesetResolver.forVisionTasks(
         "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.2/wasm"
       );
     }
-
+    const selectedModel = document.getElementById("modelSelect").value;
     objectDetector = await ObjectDetector.createFromOptions(vision, {
       baseOptions: {
-        modelAssetPath: modelPaths[modelKey],
+        modelAssetPath: modelPaths[selectedModel],
         delegate: "GPU"
       },
       scoreThreshold: 0.3,
       runningMode: runningMode
     });
 
+    // 2. TensorFlow.js / KNN / MobileNet（特徴抽出用）の初期化
+    classifier = knnClassifier.create();
+    mobilenetModel = await mobilenet.load();
+    isCustomAIReady = true;
+
     startButton.disabled = false;
     startButton.innerText = "カメラ起動 & 探索スタート";
-    status.innerText = `ステータス: 準備完了 (${modelKey})`;
+    status.innerText = "ステータス: 準備完了 (標準AI & カスタムAI待機中)";
     status.style.color = "#00ff00";
   } catch (err) {
     console.error(err);
@@ -88,14 +106,26 @@ async function initializeAImodel(modelKey) {
   }
 }
 
-initializeAImodel("lite2");
+initializeAllModels();
 
 window.changeModel = async function() {
   const selectedModel = document.getElementById("modelSelect").value;
   const wasRunning = webcamRunning;
   if (webcamRunning) stopCamera();
-  await initializeAImodel(selectedModel);
-  if (wasRunning) startCamera();
+  
+  try {
+    objectDetector = await ObjectDetector.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath: modelPaths[selectedModel],
+        delegate: "GPU"
+      },
+      scoreThreshold: 0.3,
+      runningMode: runningMode
+    });
+    if (wasRunning) startCamera();
+  } catch (err) {
+    console.error(err);
+  }
 };
 
 window.updateTarget = function() {
@@ -105,13 +135,28 @@ window.updateTarget = function() {
     return;
   }
   currentSearchWord = inputVal;
-  status.innerText = `🎯 探すものを「${currentSearchWord}」に変更しました`;
+
+  // もし自分が学習させたカスタムアイテムの名前と一致していれば、カスタム探索モードに切り替える
+  if (isTrained && currentSearchWord === customTargetName.toLowerCase()) {
+    searchModeType = "custom";
+    status.innerText = `🎯 カスタムAIモード: 自作アイテム「${customTargetName}」を探します！`;
+  } else {
+    searchModeType = "standard";
+    status.innerText = `🎯 標準AIモード: 「${currentSearchWord}」を探します`;
+  }
   status.style.color = "#00ff00";
 };
 
 window.startCamera = async function() {
   if (!objectDetector) return;
-  currentSearchWord = document.getElementById("targetObject").value.trim().toLowerCase();
+  const inputVal = document.getElementById("targetObject").value.trim().toLowerCase();
+  currentSearchWord = inputVal;
+
+  if (isTrained && currentSearchWord === customTargetName.toLowerCase()) {
+    searchModeType = "custom";
+  } else {
+    searchModeType = "standard";
+  }
 
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
@@ -123,7 +168,7 @@ window.startCamera = async function() {
     webcamRunning = true;
     startButton.style.display = "none";
     stopButton.style.display = "block";
-    status.innerText = `ステータス: 探索中... (${currentSearchWord})`;
+    status.innerText = `ステータス: 探索中... (${currentSearchWord} [モード: ${searchModeType}])`;
 
     video.onloadeddata = () => { predictWebcam(); };
   } catch (err) {
@@ -170,10 +215,15 @@ function stopTrainCamera() {
   trainVideo.srcObject = null;
 }
 
-// 角度別の撮影処理
-window.captureAngleImage = function() {
-  if (!trainCameraRunning) return;
+// 角度別の撮影＆KNNモデルへの特徴量学習
+window.captureAngleImage = async function() {
+  if (!trainCameraRunning || !isCustomAIReady) return;
 
+  // 1. 映像からテンソル（画像データ）を切り出してMobileNetで特徴量を取り出し、KNNに学習させる
+  const activation = mobilenetModel.infer(trainVideo, true);
+  classifier.addExample(activation, 0); // クラスID 0 として登録
+
+  // 2. 視覚確認用のサムネイル画像作成
   const tempCanvas = document.createElement('canvas');
   tempCanvas.width = 160;
   tempCanvas.height = 120;
@@ -243,17 +293,20 @@ window.trainAIModel = function() {
     return;
   }
 
-  document.getElementById("trainStatus").innerText = `ステータス: 「${nameInput}」のAIモデルを生成中...`;
+  customTargetName = nameInput;
+  isTrained = true;
+
+  document.getElementById("trainStatus").innerText = `ステータス: 「${customTargetName}」のAI学習を完了しました！`;
   document.getElementById("trainStatus").style.color = "#ffc107";
 
   setTimeout(() => {
-    document.getElementById("trainStatus").innerText = `🎉 成功！「${nameInput}」のAI学習が完了しました！（探索モードで検索可能になります）`;
+    document.getElementById("trainStatus").innerText = `🎉 成功！「${customTargetName}」を覚えました！（探索モードに入力すると検出できます）`;
     document.getElementById("trainStatus").style.color = "#00ff00";
-    
-    document.getElementById("targetObject").value = nameInput;
-  }, 1500);
+    document.getElementById("targetObject").value = customTargetName;
+  }, 1000);
 };
 
+// ── メインのリアルタイム推論ループ ──
 async function predictWebcam() {
   if (!webcamRunning) return;
 
@@ -268,51 +321,83 @@ async function predictWebcam() {
     lastVideoTime = video.currentTime;
 
     try {
-      const startTimeMs = performance.now();
-      const detections = objectDetector.detectForVideo(video, startTimeMs);
-
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-
       let foundTarget = false;
-      let detectedNames = [];
 
-      if (detections && detections.detections) {
-        for (let detection of detections.detections) {
-          const categoryName = detection.categories[0].categoryName.toLowerCase();
-          const score = Math.round(detection.categories[0].score * 100);
-          detectedNames.push(`${categoryName}(${score}%)`);
+      // モードに応じた推論処理
+      if (searchModeType === "custom" && isTrained && classifier.getNumClasses() > 0) {
+        // --- ① 自作カスタムAIによる判定 ---
+        const activation = mobilenetModel.infer(video, true);
+        const result = await classifier.predictClass(activation);
 
-          if (categoryName.includes(currentSearchWord)) {
-            foundTarget = true;
-            const bbox = detection.boundingBox;
-            ctx.strokeStyle = "#00ff00";
-            ctx.lineWidth = 4;
-            ctx.strokeRect(bbox.originX, bbox.originY, bbox.width, bbox.height);
+        // クラス0（登録したアイテム）と判定され、確信度が高い場合
+        if (result.classIndex === 0 && result.confidences[0] > 0.75) {
+          foundTarget = true;
+          const conf = Math.round(result.confidences[0] * 100);
 
-            ctx.fillStyle = "#00ff00";
-            ctx.font = "16px sans-serif";
-            ctx.fillText(`${categoryName} ${score}%`, bbox.originX, bbox.originY > 20 ? bbox.originY - 5 : 20);
+          // 画面全体に枠と検出結果を表示
+          ctx.strokeStyle = "#00ff00";
+          ctx.lineWidth = 4;
+          ctx.strokeRect(20, 20, canvas.width - 40, canvas.height - 40);
+
+          ctx.fillStyle = "#00ff00";
+          ctx.font = "20px sans-serif";
+          ctx.fillText(`🎉 ${customTargetName} (${conf}%)`, 30, 50);
+
+          status.innerText = `🎉 発見！カスタムアイテム: ${customTargetName} (${conf}%)`;
+          status.style.color = "#00ff00";
+        } else {
+          status.innerText = `🔍 カスタム探索中... (探している物: ${customTargetName})`;
+          status.style.color = "#aaa";
+        }
+
+      } else {
+        // --- ② 標準MediaPipeによる判定 ---
+        const startTimeMs = performance.now();
+        const detections = objectDetector.detectForVideo(video, startTimeMs);
+
+        let detectedNames = [];
+        if (detections && detections.detections) {
+          for (let detection of detections.detections) {
+            const categoryName = detection.categories[0].categoryName.toLowerCase();
+            const score = Math.round(detection.categories[0].score * 100);
+            detectedNames.push(`${categoryName}(${score}%)`);
+
+            if (categoryName.includes(currentSearchWord)) {
+              foundTarget = true;
+              const bbox = detection.boundingBox;
+              ctx.strokeStyle = "#00ff00";
+              ctx.lineWidth = 4;
+              ctx.strokeRect(bbox.originX, bbox.originY, bbox.width, bbox.height);
+
+              ctx.fillStyle = "#00ff00";
+              ctx.font = "16px sans-serif";
+              ctx.fillText(`${categoryName} ${score}%`, bbox.originX, bbox.originY > 20 ? bbox.originY - 5 : 20);
+            }
           }
+        }
+
+        if (foundTarget) {
+          status.innerText = `🎉 発見！ (${currentSearchWord})`;
+          status.style.color = "#00ff00";
+        } else {
+          if (detectedNames.length > 0) {
+            status.innerText = `👀 検出中: ${detectedNames.join(', ')} (探している物: ${currentSearchWord})`;
+          } else {
+            status.innerText = `🔍 探索中... (探している物: ${currentSearchWord})`;
+          }
+          status.style.color = "#aaa";
         }
       }
 
       if (foundTarget) {
-        status.innerText = `🎉 発見！ (${currentSearchWord})`;
-        status.style.color = "#00ff00";
-
         const now = Date.now();
         if (now - lastCaptureTime > 3000) {
           saveCapturedImage();
           lastCaptureTime = now;
         }
-      } else {
-        if (detectedNames.length > 0) {
-          status.innerText = `👀 検出中: ${detectedNames.join(', ')} (探している物: ${currentSearchWord})`;
-        } else {
-          status.innerText = `🔍 探索中... (探している物: ${currentSearchWord})`;
-        }
-        status.style.color = "#aaa";
       }
+
     } catch (e) {
       console.error("推論エラー:", e);
     }
