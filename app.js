@@ -148,7 +148,6 @@ function saveFoundImage(bbox) {
   tempCanvas.height = bbox.height;
   const tempCtx = tempCanvas.getContext("2d");
 
-  // ビデオ映像から検出部分を切り出し
   tempCtx.drawImage(
     video,
     bbox.originX, bbox.originY, bbox.width, bbox.height,
@@ -166,12 +165,19 @@ function saveFoundImage(bbox) {
   gallery.prepend(img);
 }
 
+// ★追加：履歴をすべてクリアする関数
+window.clearGallery = function() {
+  const gallery = document.getElementById("imageGallery");
+  if (gallery) {
+    gallery.innerHTML = "";
+  }
+};
+
 // リアルタイム推論
 async function predictWebcam() {
   if (!webcamRunning) return;
 
   if (video.videoWidth > 0 && video.videoHeight > 0) {
-    // 画面上の実際の表示サイズにキャンバスを合わせる
     const displayWidth = video.clientWidth;
     const displayHeight = video.clientHeight;
 
@@ -193,7 +199,6 @@ async function predictWebcam() {
 
       let detectedNames = [];
       if (detections && detections.detections) {
-        // 元動画サイズから画面表示サイズへの比率を計算（枠のズレ解消）
         const scaleX = canvas.width / video.videoWidth;
         const scaleY = canvas.height / video.videoHeight;
 
@@ -219,7 +224,6 @@ async function predictWebcam() {
             ctx.font = "16px sans-serif";
             ctx.fillText(`${categoryName} ${score}%`, x, y > 20 ? y - 5 : 20);
 
-            // 3秒に1回まで、見つけた瞬間を履歴に自動保存（写真が連打されるのを防止）
             const now = Date.now();
             if (now - lastSaveTime > 3000) {
               saveFoundImage(bbox);
