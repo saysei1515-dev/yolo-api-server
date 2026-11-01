@@ -102,7 +102,7 @@
 
     let capturedImages = [];
     let lastCaptureTime = 0;
-    let lastDetectionTime = 0; // WebView用の安定推論タイマー
+    let lastDetectionTime = 0;
     let currentSearchWord = "cup";
 
     async function initializeAImodel() {
@@ -197,11 +197,12 @@
       }
 
       const now = performance.now();
-      // 【WebView対策】video.currentTimeではなく時間間隔(約150ms毎)で安定して推論を実行
-      if (now - lastDetectionTime > 150 && video.readyState >= 2) {
+      // WebViewでも確実かつスムーズに高感度で推論を回すための時間間隔チェック (約100ms毎)
+      if (now - lastDetectionTime > 100 && video.readyState >= 2) {
         lastDetectionTime = now;
 
         try {
+          // タイムスタンプに now を使用して確実に推論を実行
           const detections = objectDetector.detectForVideo(video, now);
 
           ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -220,7 +221,7 @@
                 foundTarget = true;
               }
 
-              // 枠とラベルの描画（originX / originY を使用）
+              // 正しい originX / originY を使用して枠とラベルを描画
               const bbox = detection.bounding_box;
               ctx.strokeStyle = isTarget ? "#00ff00" : "#ffffff";
               ctx.lineWidth = isTarget ? 4 : 2;
