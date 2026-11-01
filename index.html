@@ -8,9 +8,16 @@
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.2"></script>
   <style>
     body { font-family: sans-serif; text-align: center; margin: 0; padding: 15px; background: #121212; color: #fff; }
-    input, button { font-size: 16px; padding: 12px; margin: 8px 0; width: 100%; max-width: 320px; box-sizing: border-box; }
-    button { background: #007bff; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
+    input, button { font-size: 16px; padding: 12px; margin: 6px 0; box-sizing: border-box; }
+    input { width: 100%; max-width: 320px; }
+    .btn-group { display: flex; gap: 8px; justify-content: center; max-width: 320px; margin: 0 auto; }
+    button { background: #007bff; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; }
     button:active { background: #0056b3; }
+    .btn-danger { background: #dc3545; }
+    .btn-danger:active { background: #b02a37; }
+    .btn-success { background: #28a745; }
+    .btn-success:active { background: #218838; }
+
     .container { max-width: 400px; margin: 0 auto; background: #1e1e1e; padding: 15px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
 
     .video-container {
@@ -57,9 +64,14 @@
 
     <div>
       <input type="text" id="targetObject" value="cup" placeholder="探すもの (例: cup, cell phone)">
+      <div class="btn-group">
+        <button class="btn-success" onclick="updateTarget()">決定</button>
+      </div>
     </div>
+
     <div>
       <button id="startButton" onclick="startCamera()" disabled>AIモデルをロード中...</button>
+      <button id="stopButton" class="btn-danger" onclick="stopCamera()" style="display: none;">終了する</button>
     </div>
 
     <div class="video-container">
@@ -86,10 +98,12 @@
     const ctx = canvas.getContext("2d");
     const status = document.getElementById("status");
     const startButton = document.getElementById("startButton");
+    const stopButton = document.getElementById("stopButton");
 
     let capturedImages = [];
     let lastCaptureTime = 0;
     let lastVideoTime = -1;
+    let currentSearchWord = "cup";
 
     async function initializeAImodel() {
       status.innerText = "ステータス: AIモデルをダウンロード中...";
@@ -119,19 +133,35 @@
 
     initializeAImodel();
 
+    // 探すものを決定・更新する関数
+    window.updateTarget = function() {
+      const inputVal = document.getElementById("targetObject").value.trim().toLowerCase();
+      if (inputVal === "") {
+        alert("探すものを入力してください！");
+        return;
+      }
+      currentSearchWord = inputVal;
+      status.innerText = `🎯 探すものを「${currentSearchWord}」に変更しました`;
+      status.style.color = "#00ff00";
+    };
+
     window.startCamera = async function() {
       if (!objectDetector) return;
 
+      // 起動時に入力されている値も取得
+      currentSearchWord = document.getElementById("targetObject").value.trim().toLowerCase();
+
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment' }, // 外カメラ
+          video: { facingMode: 'environment' },
           audio: false
         });
 
         video.srcObject = stream;
         webcamRunning = true;
         startButton.style.display = "none";
-        status.innerText = "ステータス: 探索中...";
+        stopButton.style.display = "block";
+        status.innerText = `ステータス: 探索中... (${currentSearchWord})`;
 
         video.onloadeddata = () => {
           predictWebcam();
@@ -140,6 +170,21 @@
         console.error(err);
         alert("カメラを起動できませんでした。");
       }
+    };
+
+    window.stopCamera = function() {
+      webcamRunning = false;
+      const stream = video.srcObject;
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+      video.srcObject = null;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      stopButton.style.display = "none";
+      startButton.style.display = "block";
+      status.innerText = "ステータス: 停止しました（準備完了）";
+      status.style.color = "#aaa";
     };
 
     async function predictWebcam() {
@@ -161,7 +206,6 @@
 
           ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-          const targetWord = document.getElementById("targetObject").value.trim().toLowerCase();
           let foundTarget = false;
           let detectedNames = [];
 
@@ -171,7 +215,7 @@
               const score = Math.round(detection.categories[0].score * 100);
               detectedNames.push(`${categoryName}(${score}%)`);
 
-              if (categoryName.includes(targetWord)) {
+              if (categoryName.includes(currentSearchWord)) {
                 foundTarget = true;
 
                 const bbox = detection.bounding_box;
@@ -187,7 +231,7 @@
           }
 
           if (foundTarget) {
-            status.innerText = `🎉 発見！ (${targetWord})`;
+            status.innerText = `🎉 発見！ (${currentSearchWord})`;
             status.style.color = "#00ff00";
 
             const now = Date.now();
@@ -197,9 +241,9 @@
             }
           } else {
             if (detectedNames.length > 0) {
-              status.innerText = `👀 検出中: ${detectedNames.join(', ')}`;
+              status.innerText = `👀 検出中: ${detectedNames.join(', ')} (探している物: ${currentSearchWord})`;
             } else {
-              status.innerText = `🔍 探索中...`;
+              status.innerText = `🔍 探索中... (探している物: ${currentSearchWord})`;
             }
             status.style.color = "#aaa";
           }
@@ -219,7 +263,7 @@
       tempCanvas.height = 120;
       const tempCtx = tempCanvas.getContext('2d');
       tempCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
-      
+
       const dataUrl = tempCanvas.toDataURL('image/jpeg');
       capturedImages.unshift(dataUrl);
 
