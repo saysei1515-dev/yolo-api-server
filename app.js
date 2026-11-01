@@ -1,5 +1,5 @@
 import { ObjectDetector, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.2";
-// ブラウザ上で超高速に画像分類・学習を行うためのTensorFlow.jsとKNN分類器を読み込み
+// TensorFlow.js とカスタム学習用のライブラリ
 import * as tf from "https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js";
 import * as knnClassifier from "https://cdn.jsdelivr.net/npm/@tensorflow-models/knn-classifier@1.2.2/dist/knn-classifier.min.js";
 import * as mobilenet from "https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.0/dist/mobilenet.min.js";
@@ -29,15 +29,15 @@ let capturedImages = [];
 let lastCaptureTime = 0;
 let lastVideoTime = -1;
 let currentSearchWord = "cup";
-let searchModeType = "standard"; // "standard" または "custom"
+let searchModeType = "standard";
 
 // 登録用データの管理
 let trainingData = {
-  front: [],  // 正面
-  angle: [],  // 斜め
-  far: []     // 遠く/離れ
+  front: [],
+  angle: [],
+  far: []
 };
-let currentStep = 1; // 1:正面, 2:斜め, 3:遠く
+let currentStep = 1;
 
 const modelPaths = {
   lite0: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite",
@@ -64,17 +64,21 @@ window.switchView = function(viewName) {
     trainView.classList.add("active");
     tabSearch.classList.remove("active");
     tabTrain.classList.add("active");
+
+    // 登録タブを開いたときに、カスタムAIの重いロードを裏側で安全に開始する
+    if (!isCustomAIReady) {
+      loadCustomAIBackground();
+    }
   }
 };
 
-// 初期化：MediaPipeと、カスタム学習用のMobileNet/KNNモデルを同時にロード
-async function initializeAllModels() {
+// 1. まずは軽量な「標準AI（MediaPipe）」を高速ロードしてすぐに動かせるようにする
+async function initializeStandardAI() {
   startButton.disabled = true;
-  status.innerText = "ステータス: AIモデル（標準＆カスタム）をロード中...";
+  status.innerText = "ステータス: 標準AIモデルをロード中...";
   status.style.color = "#aaa";
 
   try {
-    // 1. MediaPipeの初期化
     if (!vision) {
       vision = await FilesetResolver.forVisionTasks(
         "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.2/wasm"
@@ -90,23 +94,37 @@ async function initializeAllModels() {
       runningMode: runningMode
     });
 
-    // 2. TensorFlow.js / KNN / MobileNet（特徴抽出用）の初期化
-    classifier = knnClassifier.create();
-    mobilenetModel = await mobilenet.load();
-    isCustomAIReady = true;
-
     startButton.disabled = false;
     startButton.innerText = "カメラ起動 & 探索スタート";
-    status.innerText = "ステータス: 準備完了 (標準AI & カスタムAI待機中)";
+    status.innerText = "ステータス: 準備完了 (すぐに探索できます)";
     status.style.color = "#00ff00";
   } catch (err) {
     console.error(err);
-    status.innerText = "エラー: AIのロードに失敗しました";
+    status.innerText = "エラー: 標準AIのロードに失敗しました";
     status.style.color = "#ff4444";
   }
 }
 
-initializeAllModels();
+// 2. 重いカスタムAI（MobileNet等）はバックグラウンドで安全に読み込む
+async function loadCustomAIBackground() {
+  const trainStatus = document.getElementById("trainStatus");
+  trainStatus.innerText = "ステータス: カスタム学習AIを準備中...";
+  trainStatus.style.color = "#ffc107";
+
+  try {
+    classifier = knnClassifier.create();
+    mobilenetModel = await mobilenet.load();
+    isCustomAIReady = true;
+    trainStatus.innerText = "ステータス: 準備完了（撮影して学習できます）";
+    trainStatus.style.color = "#00ff00";
+  } catch (err) {
+    console.error(err);
+    trainStatus.innerText = "エラー: カスタムAIのロードに失敗しました";
+    trainStatus.style.color = "#ff4444";
+  }
+}
+
+initializeStandardAI();
 
 window.changeModel = async function() {
   const selectedModel = document.getElementById("modelSelect").value;
@@ -167,7 +185,7 @@ window.startCamera = async function() {
     webcamRunning = true;
     startButton.style.display = "none";
     stopButton.style.display = "block";
-    status.innerText = `ステータス: 探索中... (${currentSearchWord} [モード: ${searchModeType}])`;
+    status.innerText = `ステータス: 探索中... (${currentSearchWord})`;
 
     video.onloadeddata = () => { predictWebcam(); };
   } catch (err) {
@@ -191,6 +209,11 @@ window.stopCamera = function() {
 
 // ── AI登録モード用カメラ制御 ──
 window.startTrainCamera = async function() {
+  if (!isCustomAIReady) {
+    alert("カスタムAIの準備中です。少し待ってからもう一度押してください。");
+    return;
+  }
+
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: 'environment' },
@@ -296,7 +319,7 @@ window.trainAIModel = function() {
   document.getElementById("trainStatus").style.color = "#ffc107";
 
   setTimeout(() => {
-    document.getElementById("trainStatus").innerText = `🎉 成功！「${customTargetName}」を覚えました！（探索モードに入力すると検出できます）`;
+    document.getElementById("trainStatus").innerText = `🎉 成功！「${customTargetName}」を覚えました！`;
     document.getElementById("trainStatus").style.color = "#00ff00";
     document.getElementById("targetObject").value = customTargetName;
   }, 1000);
@@ -419,5 +442,6 @@ function saveCapturedImage() {
     gallery.appendChild(img);
   });
 }
+
 
 
