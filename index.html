@@ -38,7 +38,7 @@
       object-fit: cover;
     }
 
-    #status { margin-top: 10px; font-size: 15px; font-weight: bold; color: #aaa; word-break: break-all; line-height: 1.4; }
+    #status { margin-top: 10px; font-size: 15px; font-weight: bold; color: #aaa; word-break: break-all; }
 
     #imageGallery {
       display: flex;
@@ -63,7 +63,7 @@
     <h2>FINDRONE</h2>
 
     <div>
-      <input type="text" id="targetObject" value="cup" placeholder="探すもの (例: cup, book)">
+      <input type="text" id="targetObject" value="cup" placeholder="探すもの (例: cup, cell phone)">
       <div class="btn-group">
         <button class="btn-success" onclick="updateTarget()">決定</button>
       </div>
@@ -212,27 +212,24 @@
               const score = Math.round(detection.categories[0].score * 100);
               detectedNames.push(`${categoryName}(${score}%)`);
 
-              // ターゲットと一致するかどうか
-              const isTarget = categoryName.includes(currentSearchWord);
-              if (isTarget) {
+              if (categoryName.includes(currentSearchWord)) {
                 foundTarget = true;
+
+                const bbox = detection.bounding_box;
+                ctx.strokeStyle = "#00ff00";
+                ctx.lineWidth = 4;
+                ctx.strokeRect(bbox.origin_x, bbox.origin_y, bbox.width, bbox.height);
+
+                ctx.fillStyle = "#00ff00";
+                ctx.font = "16px sans-serif";
+                ctx.fillText(`${categoryName} ${score}%`, bbox.origin_x, bbox.origin_y > 20 ? bbox.origin_y - 5 : 20);
               }
-
-              // 画面上のすべての物体に枠と確率％を描画（ターゲットは緑、他はグレー）
-              const bbox = detection.bounding_box;
-              ctx.strokeStyle = isTarget ? "#00ff00" : "#aaaaaa";
-              ctx.lineWidth = isTarget ? 4 : 2;
-              ctx.strokeRect(bbox.origin_x, bbox.origin_y, bbox.width, bbox.height);
-
-              ctx.fillStyle = isTarget ? "#00ff00" : "#aaaaaa";
-              ctx.font = "16px sans-serif";
-              ctx.fillText(`${categoryName} ${score}%`, bbox.origin_x, bbox.origin_y > 20 ? bbox.origin_y - 5 : 20);
             }
           }
 
-          // ステータス欄に検出されたすべての物体と確率を必ず反映
+          // 修正ポイント：ターゲット発見時はもちろん、何か検出している時もステータスに％や名前を確実に残す
           if (foundTarget) {
-            status.innerText = `🎉 発見！ 検出中: ${detectedNames.join(', ')}`;
+            status.innerText = `🎉 発見！ (${currentSearchWord}) - 検出: ${detectedNames.join(', ')}`;
             status.style.color = "#00ff00";
 
             const now = Date.now();
@@ -259,7 +256,13 @@
     }
 
     function saveCapturedImage() {
-      const dataUrl = canvas.toDataURL('image/jpeg');
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = 160;
+      tempCanvas.height = 120;
+      const tempCtx = tempCanvas.getContext('2d');
+      tempCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
+
+      const dataUrl = tempCanvas.toDataURL('image/jpeg');
       capturedImages.unshift(dataUrl);
 
       if (capturedImages.length > 10) {
