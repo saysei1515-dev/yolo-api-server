@@ -25,7 +25,8 @@ let lastCaptureTime = 0;
 let lastVideoTime = -1;
 let currentSearchWord = "cup";
 let searchModeType = "standard";
-let capturedCount = 0;
+let targetCount = 0;
+let bgCount = 0;
 
 const modelPaths = {
   lite0: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite",
@@ -195,7 +196,6 @@ window.stopCamera = function() {
   status.style.color = "#aaa";
 };
 
-// ── 登録モード用カメラ制御 ──
 window.startTrainCamera = async function() {
   if (!isCustomAIReady) {
     alert("カスタムAIの準備中です。少し待ってからもう一度押してください。");
@@ -210,10 +210,10 @@ window.startTrainCamera = async function() {
     trainVideo.srcObject = stream;
     trainCameraRunning = true;
     document.getElementById("trainCamStartBtn").style.display = "none";
-    document.getElementById("captureAngleBtn").style.display = "block";
     document.getElementById("cropGuideBox").style.display = "block";
     document.getElementById("cropControls").style.display = "block";
-    document.getElementById("trainStatus").innerText = "ステータス: リモコンの形に枠を合わせよう";
+    document.getElementById("trainButtonContainer").style.display = "block";
+    document.getElementById("trainStatus").innerText = "ステータス: リモコンや背景を枠に合わせて撮影しよう";
     document.getElementById("trainStatus").style.color = "#00ff00";
   } catch (err) {
     console.error(err);
@@ -228,7 +228,6 @@ function stopTrainCamera() {
   trainVideo.srcObject = null;
 }
 
-// 枠の動きをスライダーに連動させる
 window.updateCropBox = function() {
   const size = document.getElementById("cropSizeRange").value;
   const x = document.getElementById("cropXRange").value;
@@ -241,13 +240,11 @@ window.updateCropBox = function() {
   box.style.top = (y - size / 2) + "%";
 };
 
-// スライダーの位置を元に、ビデオ映像からピンポイントで切り抜いて学習
-window.captureAngleImage = async function() {
-  if (!trainCameraRunning || !isCustomAIReady) return;
-
+// 共通の切り抜き処理
+function getCroppedCanvas() {
   const vWidth = trainVideo.videoWidth;
   const vHeight = trainVideo.videoHeight;
-  if (vWidth === 0 || vHeight === 0) return;
+  if (vWidth === 0 || vHeight === 0) return null;
 
   const sizeVal = document.getElementById("cropSizeRange").value / 100;
   const xVal = document.getElementById("cropXRange").value / 100;
@@ -258,7 +255,6 @@ window.captureAngleImage = async function() {
   const cropX = (vWidth * xVal) - (cropW / 2);
   const cropY = (vHeight * yVal) - (cropH / 2);
 
-  // 切り抜き用のキャンバスを作成
   const cropCanvas = document.createElement('canvas');
   cropCanvas.width = 224;
   cropCanvas.height = 224;
@@ -269,23 +265,50 @@ window.captureAngleImage = async function() {
     Math.max(0, cropX), Math.max(0, cropY), cropW, cropH,
     0, 0, 224, 224
   );
+  return cropCanvas;
+}
 
-  // 切り抜いた部分だけをAIに覚えさせる
+// ① リモコン（ターゲット）を学習する (Class 0)
+window.captureTargetImage = async function() {
+  if (!trainCameraRunning || !isCustomAIReady) return;
+  const cropCanvas = getCroppedCanvas();
+  if (!cropCanvas) return;
+
   const activation = mobilenetModel.infer(cropCanvas, true);
-  classifier.addExample(activation, 0);
+  classifier.addExample(activation, 0); // クラス0: ターゲット
+  targetCount++;
 
-  capturedCount++;
+  addThumbnail(cropCanvas.toDataURL('image/jpeg'), "📦");
+  document.getElementById("trainStatus").innerText = `ステータス: リモコンを ${targetCount} 枚学習しました`;
+};
 
-  // ギャラリーに切り抜き後のお手本画像を表示
-  const dataUrl = cropCanvas.toDataURL('image/jpeg');
+// ② 何もない背景を学習する (Class 1)
+window.captureBackgroundImg = async function() {
+  if (!trainCameraRunning || !isCustomAIReady) return;
+  const cropCanvas = getCroppedCanvas();
+  if (!cropCanvas) return;
+
+  const activation = mobilenetModel.infer(cropCanvas, true);
+  classifier.addExample(activation, 1); // クラス1: 背景・何もない状態
+  bgCount++;
+
+  addThumbnail(cropCanvas.toDataURL('image/jpeg'), "🖼️");
+  document.getElementById("trainStatus").innerText = `ステータス: 背景を ${bgCount} 枚学習しました`;
+};
+
+function addThumbnail(dataUrl, label) {
   const gallery = document.getElementById('trainGallery');
+  const div = document.createElement('div');
+  div.style.position = 'relative';
+  div.style.display = 'inline-block';
+
   const img = document.createElement('img');
   img.src = dataUrl;
   img.className = 'captured-thumb';
-  gallery.appendChild(img);
 
-  document.getElementById("trainStatus").innerText = `ステータス: 切り抜き写真 ${capturedCount}枚目を学習しました！`;
-};
+  div.appendChild(img);
+  gallery.appendChild(div);
+}
 
 window.trainAIModel = function() {
   const nameInput = document.getElementById("newObjectName").value.trim();
@@ -293,20 +316,20 @@ window.trainAIModel = function() {
     alert("アイテム名を入力してください！");
     return;
   }
-  if (capturedCount < 3) {
-    alert("もう少し写真を撮影してからトレーニングしてください！");
+  if (targetCount < 3 || bgCount < 3) {
+    alert("リモコンの写真も背景の写真も、それぞれ3枚以上撮影してください！");
     return;
   }
 
   customTargetName = nameInput;
   isTrained = true;
 
-  document.getElementById("trainStatus").innerText = `🎉 成功！「${customTargetName}」の切り抜き学習を完了しました！`;
+  document.getElementById("trainStatus").innerText = `🎉 成功！「${customTargetName}」の学習が完了しました！`;
   document.getElementById("trainStatus").style.color = "#00ff00";
   document.getElementById("targetObject").value = customTargetName;
 };
 
-// ── 探索時も同様に中央または指定範囲をトリミングして厳格に判定 ──
+// ── 探索時の推論（背景クラスなら無視、ターゲットクラスのときだけ反応） ──
 async function predictWebcam() {
   if (!webcamRunning) return;
 
@@ -340,7 +363,7 @@ async function predictWebcam() {
         const activation = mobilenetModel.infer(cropCanvas, true);
         const result = await classifier.predictClass(activation);
 
-        // 誤作動を防ぐため信頼度を 0.85 以上に厳格化
+        // クラス0（リモコン）であり、かつ信頼度が 0.85 以上のときだけ「発見！」にする
         if (result.classIndex === 0 && result.confidences[0] > 0.85) {
           foundTarget = true;
           const conf = Math.round(result.confidences[0] * 100);
