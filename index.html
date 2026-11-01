@@ -102,6 +102,7 @@
 
     let capturedImages = [];
     let lastCaptureTime = 0;
+    let lastVideoTime = -1;
     let currentSearchWord = "cup";
 
     async function initializeAImodel() {
@@ -160,6 +161,7 @@
         startButton.style.display = "none";
         stopButton.style.display = "block";
         status.innerText = `ステータス: 探索中... (${currentSearchWord})`;
+        lastVideoTime = -1; // タイマーリセット
 
         predictWebcam();
 
@@ -194,9 +196,12 @@
         }
       }
 
-      try {
-        const startTimeMs = performance.now();
-        if (video.readyState >= 2) {
+      // 【修正】動画のフレームが進んだ時だけ正確にAI推論を実行する元の正しい仕組みに戻しました
+      if (video.currentTime !== lastVideoTime) {
+        lastVideoTime = video.currentTime;
+
+        try {
+          const startTimeMs = performance.now();
           const detections = objectDetector.detectForVideo(video, startTimeMs);
 
           ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -215,7 +220,7 @@
                 foundTarget = true;
               }
 
-              // 【修正】origin_x/origin_y を正しい originX/originY に変更
+              // 枠とラベルの描画（ターゲットは緑、それ以外は白）
               const bbox = detection.bounding_box;
               ctx.strokeStyle = isTarget ? "#00ff00" : "#ffffff";
               ctx.lineWidth = isTarget ? 4 : 2;
@@ -245,9 +250,9 @@
               status.style.color = "#aaa";
             }
           }
+        } catch (e) {
+          console.error("推論エラー:", e);
         }
-      } catch (e) {
-        console.error("推論エラー:", e);
       }
 
       if (webcamRunning) {
