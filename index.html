@@ -3,71 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI探偵カメラ（マルチモード版）</title>
+  <title>AI探偵カメラ（スマート学習版）</title>
+  <!-- 外部CSSファイルの読み込み -->
+  <link rel="stylesheet" href="style.css">
   <!-- MediaPipe Object Detection のライブラリ -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.2"></script>
-  <style>
-    body { font-family: sans-serif; text-align: center; margin: 0; padding: 15px; background: #121212; color: #fff; }
-    input, select, button { font-size: 16px; padding: 12px; margin: 6px 0; box-sizing: border-box; }
-    input, select { width: 100%; max-width: 320px; background: #2a2a2a; color: #fff; border: 1px solid #444; border-radius: 6px; }
-    .btn-group { display: flex; gap: 8px; justify-content: center; max-width: 320px; margin: 0 auto; }
-    button { background: #007bff; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; }
-    button:active { background: #0056b3; }
-    .btn-danger { background: #dc3545; }
-    .btn-danger:active { background: #b02a37; }
-    .btn-success { background: #28a745; }
-    .btn-success:active { background: #218838; }
-
-    .container { max-width: 400px; margin: 0 auto; background: #1e1e1e; padding: 15px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
-
-    /* タブ切り替えボタンのスタイル */
-    .tab-container { display: flex; gap: 6px; margin-bottom: 15px; }
-    .tab-btn { background: #2a2a2a; color: #aaa; border: 1px solid #444; flex: 1; padding: 10px; font-size: 14px; border-radius: 6px; cursor: pointer; }
-    .tab-btn.active { background: #007bff; color: white; border-color: #007bff; }
-
-    .view-section { display: none; }
-    .view-section.active { display: block; }
-
-    .setting-group { margin-bottom: 10px; text-align: left; max-width: 320px; margin-left: auto; margin-right: auto; }
-    .setting-label { font-size: 13px; color: #aaa; margin-bottom: 2px; display: block; }
-
-    .video-container {
-      position: relative;
-      width: 100%;
-      height: 240px;
-      background: #000;
-      border-radius: 8px;
-      margin-top: 10px;
-      overflow: hidden;
-    }
-    video, canvas {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-
-    #status { margin-top: 10px; font-size: 15px; font-weight: bold; color: #aaa; word-break: break-all; }
-
-    #imageGallery {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      justify-content: center;
-      margin-top: 10px;
-      max-height: 150px;
--      overflow-y: auto;
-    }
-    .captured-thumb {
-      width: 70px;
-      height: 50px;
-      object-fit: cover;
-      border-radius: 4px;
-      border: 2px solid #00ff00;
-    }
-  </style>
 </head>
 <body>
   <div class="container">
@@ -118,264 +58,38 @@
     <!-- ── ② AI登録（学習）モード画面 ── -->
     <div id="trainView" class="view-section">
       <div class="setting-group">
-        <span class="setting-label">🏷️ 新しく覚えるアイテム名</span>
-        <input type="text" id="newObjectName" placeholder="例: my_guitar, key">
-      </div>
-      
-      <div style="background: #2a2a2a; padding: 12px; border-radius: 8px; margin-top: 10px; font-size: 13px; color: #ddd; text-align: left;">
-        <p style="margin: 0 0 8px 0; font-weight: bold; color: #00ff00;">💡 登録の手順（準備中）</p>
-        1. 覚えさせたい物の名前を入力<br>
-        2. カメラに向けてボタンを押し、写真を撮影<br>
-        3. AIに学習させて自分だけのモデルを作成！
+        <span class="setting-label">🏷️ 覚えるアイテムの名前</span>
+        <input type="text" id="newObjectName" value="my_guitar" placeholder="例: my_guitar, key">
       </div>
 
-      <div style="margin-top: 20px;">
-        <button class="btn-success" onclick="alert('ここから学習機能へと発展させていきます！')">📸 写真を撮って学習する</button>
+      <div class="angle-guide-box">
+        <p id="angleGuideText" style="margin: 0 0 4px 0; font-weight: bold; color: #00ff00;">📸 ステップ1: 正面から撮影してください</p>
+        <span id="angleCountText" style="color: #aaa; font-size: 12px;">現在の登録枚数: 正面(0/3) | 斜め(0/3) | 遠く(0/3)</span>
       </div>
+
+      <div>
+        <button id="trainCamStartBtn" class="btn-warning" onclick="startTrainCamera()">登録用カメラ起動</button>
+        <button id="captureAngleBtn" class="btn-success" onclick="captureAngleImage()" style="display: none;">📸 この角度で撮影する</button>
+      </div>
+
+      <div class="train-video-container">
+        <video id="trainVideo" autoplay playsinline muted></video>
+      </div>
+
+      <div style="margin-top: 10px; text-align: left;">
+        <h4 style="margin: 5px 0; font-size: 14px; color: #ccc;">📁 撮影したトレーニング写真</h4>
+        <div id="trainGallery"></div>
+      </div>
+
+      <div style="margin-top: 10px;">
+        <button class="btn-success" onclick="trainAIModel()" style="background: #6f42c1;">✨ このデータでAIをトレーニングする</button>
+      </div>
+      <p id="trainStatus" style="margin-top: 8px; font-size: 13px; color: #aaa;">ステータス: 待機中</p>
     </div>
 
   </div>
 
-  <script type="module">
-    import { ObjectDetector, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.2";
-
-    let objectDetector = undefined;
-    let runningMode = "VIDEO";
-    let webcamRunning = false;
-    let vision = undefined;
-    const video = document.getElementById("video");
-    const canvas = document.getElementById("outputCanvas");
-    const ctx = canvas.getContext("2d");
-    const status = document.getElementById("status");
-    const startButton = document.getElementById("startButton");
-    const stopButton = document.getElementById("stopButton");
-
-    let capturedImages = [];
-    let lastCaptureTime = 0;
-    let lastVideoTime = -1;
-    let currentSearchWord = "cup";
-
-    const modelPaths = {
-      lite0: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite",
-      lite2: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite2/float16/1/efficientdet_lite2.tflite"
-    };
-
-    // タブ切り替えの関数
-    window.switchView = function(viewName) {
-      // カメラが動いていたらタブ切替時に安全にストップ
-      if (webcamRunning) {
-        stopCamera();
-      }
-
-      const searchView = document.getElementById("searchView");
-      const trainView = document.getElementById("trainView");
-      const tabSearch = document.getElementById("tabSearch");
-      const tabTrain = document.getElementById("tabTrain");
-
-      if (viewName === 'search') {
-        searchView.classList.add("active");
-        trainView.classList.remove("active");
-        tabSearch.classList.add("active");
-        tabTrain.classList.remove("active");
-      } else {
-        searchView.classList.remove("active");
-        trainView.classList.add("active");
-        tabSearch.classList.remove("active");
-        tabTrain.classList.add("active");
-      }
-    };
-
-    async function initializeAImodel(modelKey) {
-      startButton.disabled = true;
-      status.innerText = `ステータス: ${modelKey} モデルを読み込み中...`;
-      status.style.color = "#aaa";
-
-      try {
-        if (!vision) {
-          vision = await FilesetResolver.forVisionTasks(
-            "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.2/wasm"
-          );
-        }
-
-        objectDetector = await ObjectDetector.createFromOptions(vision, {
-          baseOptions: {
-            modelAssetPath: modelPaths[modelKey],
-            delegate: "GPU"
-          },
-          scoreThreshold: 0.3,
-          runningMode: runningMode
-        });
-
-        startButton.disabled = false;
-        startButton.innerText = "カメラ起動 & 探索スタート";
-        status.innerText = `ステータス: 準備完了 (${modelKey})`;
-        status.style.color = "#00ff00";
-      } catch (err) {
-        console.error(err);
-        status.innerText = "エラー: AIのロードに失敗しました";
-        status.style.color = "#ff4444";
-      }
-    }
-
-    initializeAImodel("lite2");
-
-    window.changeModel = async function() {
-      const selectedModel = document.getElementById("modelSelect").value;
-      const wasRunning = webcamRunning;
-      if (webcamRunning) {
-        stopCamera();
-      }
-      await initializeAImodel(selectedModel);
-      if (wasRunning) {
-        startCamera();
-      }
-    };
-
-    window.updateTarget = function() {
-      const inputVal = document.getElementById("targetObject").value.trim().toLowerCase();
-      if (inputVal === "") {
-        alert("探すものを入力してください！");
-        return;
-      }
-      currentSearchWord = inputVal;
-      status.innerText = `🎯 探すものを「${currentSearchWord}」に変更しました`;
-      status.style.color = "#00ff00";
-    };
-
-    window.startCamera = async function() {
-      if (!objectDetector) return;
-      currentSearchWord = document.getElementById("targetObject").value.trim().toLowerCase();
-
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment' },
-          audio: false
-        });
-
-        video.srcObject = stream;
-        webcamRunning = true;
-        startButton.style.display = "none";
-        stopButton.style.display = "block";
-        status.innerText = `ステータス: 探索中... (${currentSearchWord})`;
-
-        video.onloadeddata = () => {
-          predictWebcam();
-        };
-      } catch (err) {
-        console.error(err);
-        alert("カメラを起動できませんでした。");
-      }
-    };
-
-    window.stopCamera = function() {
-      webcamRunning = false;
-      const stream = video.srcObject;
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-      }
-      video.srcObject = null;
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      stopButton.style.display = "none";
-      startButton.style.display = "block";
-      status.innerText = "ステータス: 停止しました（準備完了）";
-      status.style.color = "#aaa";
-    };
-
-    async function predictWebcam() {
-      if (!webcamRunning) return;
-
-      if (video.videoWidth > 0 && video.videoHeight > 0) {
-        if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
-          canvas.width = video.videoWidth;
-          canvas.height = video.videoHeight;
-        }
-      }
-
-      if (video.currentTime !== lastVideoTime) {
-        lastVideoTime = video.currentTime;
-
-        try {
-          const startTimeMs = performance.now();
-          const detections = objectDetector.detectForVideo(video, startTimeMs);
-
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-          let foundTarget = false;
-          let detectedNames = [];
-
-          if (detections && detections.detections) {
-            for (let detection of detections.detections) {
-              const categoryName = detection.categories[0].categoryName.toLowerCase();
-              const score = Math.round(detection.categories[0].score * 100);
-              detectedNames.push(`${categoryName}(${score}%)`);
-
-              if (categoryName.includes(currentSearchWord)) {
-                foundTarget = true;
-
-                const bbox = detection.boundingBox;
-                ctx.strokeStyle = "#00ff00";
-                ctx.lineWidth = 4;
-                ctx.strokeRect(bbox.originX, bbox.originY, bbox.width, bbox.height);
-
-                ctx.fillStyle = "#00ff00";
-                ctx.font = "16px sans-serif";
-                ctx.fillText(`${categoryName} ${score}%`, bbox.originX, bbox.originY > 20 ? bbox.originY - 5 : 20);
-              }
-            }
-          }
-
-          if (foundTarget) {
-            status.innerText = `🎉 発見！ (${currentSearchWord})`;
-            status.style.color = "#00ff00";
-
-            const now = Date.now();
-            if (now - lastCaptureTime > 3000) {
-              saveCapturedImage();
-              lastCaptureTime = now;
-            }
-          } else {
-            if (detectedNames.length > 0) {
-              status.innerText = `👀 検出中: ${detectedNames.join(', ')} (探している物: ${currentSearchWord})`;
-            } else {
-              status.innerText = `🔍 探索中... (探している物: ${currentSearchWord})`;
-            }
-            status.style.color = "#aaa";
-          }
-        } catch (e) {
-          console.error("推論エラー:", e);
-        }
-      }
-
-      if (webcamRunning) {
-        window.requestAnimationFrame(predictWebcam);
-      }
-    }
-
-    function saveCapturedImage() {
-      const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = 160;
-      tempCanvas.height = 120;
-      const tempCtx = tempCanvas.getContext('2d');
-      tempCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
-
-      const dataUrl = tempCanvas.toDataURL('image/jpeg');
-      capturedImages.unshift(dataUrl);
-
-      if (capturedImages.length > 10) {
-        capturedImages.pop();
-      }
-
-      const gallery = document.getElementById('imageGallery');
-      gallery.innerHTML = '';
-      capturedImages.forEach(src => {
-        const img = document.createElement('img');
-        img.src = src;
-        img.className = 'captured-thumb';
-        gallery.appendChild(img);
-      });
-    }
-  </script>
+  <!-- 外部JavaScriptファイルの読み込み（モジュールとして実行） -->
+  <script type="module" src="app.js"></script>
 </body>
 </html>
-
