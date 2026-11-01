@@ -1,6 +1,5 @@
 import { ObjectDetector, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.2";
 
-// ── 状態管理変数 ──
 let objectDetector = undefined;
 let runningMode = "VIDEO";
 let webcamRunning = false;
@@ -66,7 +65,7 @@ window.switchView = function(viewName) {
   }
 };
 
-// 1. 標準AI（MediaPipe）の初期化
+// 1. 標準AIの初期化
 async function initializeStandardAI() {
   startButton.disabled = true;
   status.innerText = "ステータス: 標準AIモデルをロード中...";
@@ -90,10 +89,10 @@ async function initializeStandardAI() {
 
     startButton.disabled = false;
     startButton.innerText = "カメラ起動 & 探索スタート";
-    status.innerText = "ステータス: 準備完了 (探索できます)";
+    status.innerText = "ステータス: 準備完了";
     status.style.color = "#00ff00";
   } catch (err) {
-    console.error("標準AIロードエラー:", err);
+    console.error(err);
     status.innerText = "エラー: AIのロードに失敗しました";
     status.style.color = "#ff4444";
   }
@@ -111,13 +110,13 @@ async function loadCustomAI() {
       mobilenetModel = await mobilenet.load();
       isCustomAIReady = true;
 
-      trainStatus.innerText = "ステータス: 準備完了（枠内に収めて撮影できます）";
+      trainStatus.innerText = "ステータス: 準備完了（切り抜き撮影できます）";
       trainStatus.style.color = "#00ff00";
     } else {
       throw new Error("ライブラリが読み込まれていません");
     }
   } catch (err) {
-    console.error("カスタムAIロードエラー:", err);
+    console.error(err);
     trainStatus.innerText = "エラー: カスタムAIのロードに失敗しました";
     trainStatus.style.color = "#ff4444";
   }
@@ -155,7 +154,7 @@ window.updateTarget = function() {
 
   if (isTrained && currentSearchWord === customTargetName.toLowerCase()) {
     searchModeType = "custom";
-    status.innerText = `🎯 カスタムAIモード: 自作アイテム「${customTargetName}」を探します！`;
+    status.innerText = `🎯 カスタムAIモード: 「${customTargetName}」を探します！`;
   } else {
     searchModeType = "standard";
     status.innerText = `🎯 標準AIモード: 「${currentSearchWord}」を探します`;
@@ -165,8 +164,7 @@ window.updateTarget = function() {
 
 window.startCamera = async function() {
   if (!objectDetector) return;
-  const inputVal = document.getElementById("targetObject").value.trim().toLowerCase();
-  currentSearchWord = inputVal;
+  currentSearchWord = document.getElementById("targetObject").value.trim().toLowerCase();
 
   if (isTrained && currentSearchWord === customTargetName.toLowerCase()) {
     searchModeType = "custom";
@@ -209,7 +207,7 @@ window.stopCamera = function() {
 // ── 登録モード用カメラ制御 ──
 window.startTrainCamera = async function() {
   if (!isCustomAIReady) {
-    alert("カスタムAIの準備中です。数秒待ってからもう一度押してください。");
+    alert("カスタムAIの準備中です。少し待ってからもう一度押してください。");
     return;
   }
 
@@ -222,7 +220,8 @@ window.startTrainCamera = async function() {
     trainCameraRunning = true;
     document.getElementById("trainCamStartBtn").style.display = "none";
     document.getElementById("captureAngleBtn").style.display = "block";
-    document.getElementById("trainStatus").innerText = "ステータス: 枠内にアイテムを収めて撮影してね";
+    document.getElementById("cropGuideBox").style.display = "block";
+    document.getElementById("trainStatus").innerText = "ステータス: リモコンを枠に合わせてね";
     document.getElementById("trainStatus").style.color = "#00ff00";
   } catch (err) {
     console.error(err);
@@ -237,37 +236,57 @@ function stopTrainCamera() {
   trainVideo.srcObject = null;
 }
 
-// ── 中央フレーム（切り抜き）部分だけを抽出してAIに学習させる ──
-window.captureAngleImage = async function() {
+// 枠の調整UIを連動させる関数
+window.updateCropBox = function() {
+  const size = document.getElementById("cropSizeRange").value;
+  const x = document.getElementById("cropXRange").value;
+  const y = document.getElementById("cropYRange").value;
+
+  const box = document.getElementById("cropGuideBox");
+  box.style.width = size + "%";
+  box.style.height = size + "%";
+  box.style.left = (x - size / 2) + "%";
+  box.style.top = (y - size / 2) + "%";
+};
+
+window.prepareCapture = function() {
+  if (!trainCameraRunning) return;
+  document.getElementById("captureAngleBtn").style.display = "none";
+  document.getElementById("cropControls").style.display = "block";
+  document.getElementById("trainStatus").innerText = "ステータス: スライダーでリモコンの位置に枠を合わせてね";
+};
+
+// プレイヤーが指定した枠の中身だけを正確に切り抜いて学習
+window.captureWithCrop = async function() {
   if (!trainCameraRunning || !isCustomAIReady) return;
 
   const vWidth = trainVideo.videoWidth;
   const vHeight = trainVideo.videoHeight;
   if (vWidth === 0 || vHeight === 0) return;
 
-  // 画面中央の正方形エリア（例: 幅・高さの半分のサイズ）を切り抜く計算
-  const cropSize = Math.min(vWidth, vHeight) * 0.6;
-  const startX = (vWidth - cropSize) / 2;
-  const startY = (vHeight - cropSize) / 2;
+  const sizeVal = document.getElementById("cropSizeRange").value / 100;
+  const xVal = document.getElementById("cropXRange").value / 100;
+  const yVal = document.getElementById("cropYRange").value / 100;
 
-  // 切り抜き専用の隠しキャンバスを作成
+  const cropW = vWidth * sizeVal;
+  const cropH = vHeight * sizeVal;
+  const cropX = (vWidth * xVal) - (cropW / 2);
+  const cropY = (vHeight * yVal) - (cropH / 2);
+
   const cropCanvas = document.createElement('canvas');
-  cropCanvas.width = 224;  // MobileNetが処理しやすいサイズにリサイズ
+  cropCanvas.width = 224;
   cropCanvas.height = 224;
   const cropCtx = cropCanvas.getContext('2d');
 
-  // ビデオの中央部分だけをキャンバスに描画（背景を削る）
   cropCtx.drawImage(
     trainVideo,
-    startX, startY, cropSize, cropSize, // 切り出し元
-    0, 0, 224, 224                      // 描き出し先
+    Math.max(0, cropX), Math.max(0, cropY), cropW, cropH,
+    0, 0, 224, 224
   );
 
-  // 1. 切り抜いた純粋なオブジェクト画像から特徴量を抽出して学習
   const activation = mobilenetModel.infer(cropCanvas, true);
   classifier.addExample(activation, 0);
 
-  // 2. ギャラリー表示用のサムネイル生成
   const dataUrl = cropCanvas.toDataURL('image/jpeg');
 
   if (currentStep === 1) {
@@ -283,6 +302,10 @@ window.captureAngleImage = async function() {
 
   updateGuideUI();
   updateTrainGallery();
+
+  // 調整UIを閉じて次の撮影へ
+  document.getElementById("cropControls").style.display = "none";
+  document.getElementById("captureAngleBtn").style.display = "block";
 };
 
 function updateGuideUI() {
@@ -296,13 +319,13 @@ function updateGuideUI() {
   countText.innerText = `現在の登録枚数: 正面(${fCount}/3) | 斜め(${aCount}/3) | 遠く(${dCount}/3)`;
 
   if (currentStep === 1) {
-    guideText.innerText = "📸 ステップ1: 枠内にアイテムの「正面」を収めて撮影（あと " + (3 - fCount) + " 枚）";
+    guideText.innerText = "📸 ステップ1: リモコンの「正面」を枠に合わせて撮影（あと " + (3 - fCount) + " 枚）";
     guideText.style.color = "#00ff00";
   } else if (currentStep === 2) {
-    guideText.innerText = "📸 ステップ2: 枠内に「斜め」を収めて撮影（あと " + (3 - aCount) + " 枚）";
+    guideText.innerText = "📸 ステップ2: リモコンの「斜め」を枠に合わせて撮影（あと " + (3 - aCount) + " 枚）";
     guideText.style.color = "#ffc107";
   } else if (currentStep === 3) {
-    guideText.innerText = "📸 ステップ3: 少し離すか別角度を収めて撮影（あと " + (3 - dCount) + " 枚）";
+    guideText.innerText = "📸 ステップ3: 少し離して枠に合わせて撮影（あと " + (3 - dCount) + " 枚）";
     guideText.style.color = "#17a2b8";
   }
 }
@@ -339,13 +362,13 @@ window.trainAIModel = function() {
   document.getElementById("trainStatus").style.color = "#ffc107";
 
   setTimeout(() => {
-    document.getElementById("trainStatus").innerText = `🎉 成功！「${customTargetName}」を覚えました！（探索モードで検索できます）`;
+    document.getElementById("trainStatus").innerText = `🎉 成功！「${customTargetName}」を覚えました！`;
     document.getElementById("trainStatus").style.color = "#00ff00";
     document.getElementById("targetObject").value = customTargetName;
   }, 1000);
 };
 
-// ── メインのリアルタイム推論ループ ──
+// ── 探索時の推論ループ（探索時もプレイヤーの指定通り中央部分を厳格に判定） ──
 async function predictWebcam() {
   if (!webcamRunning) return;
 
@@ -364,10 +387,9 @@ async function predictWebcam() {
       let foundTarget = false;
 
       if (searchModeType === "custom" && isTrained && classifier && classifier.getNumClasses() > 0) {
-        // 探索時も同様に中央部分の特徴量を切り取って判定する（背景の影響をカット）
         const vWidth = video.videoWidth;
         const vHeight = video.videoHeight;
-        const cropSize = Math.min(vWidth, vHeight) * 0.6;
+        const cropSize = Math.min(vWidth, vHeight) * 0.5;
         const startX = (vWidth - cropSize) / 2;
         const startY = (vHeight - cropSize) / 2;
 
@@ -380,7 +402,7 @@ async function predictWebcam() {
         const activation = mobilenetModel.infer(cropCanvas, true);
         const result = await classifier.predictClass(activation);
 
-        // 誤作動を防ぐため、信頼度の閾値を少し高め（0.85以上）に設定
+        // 誤作動を防ぐため信頼度を 0.85 以上に厳格化
         if (result.classIndex === 0 && result.confidences[0] > 0.85) {
           foundTarget = true;
           const conf = Math.round(result.confidences[0] * 100);
