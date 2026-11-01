@@ -38,7 +38,7 @@
       object-fit: cover;
     }
 
-    #status { margin-top: 10px; font-size: 15px; font-weight: bold; color: #aaa; word-break: break-all; }
+    #status { margin-top: 10px; font-size: 15px; font-weight: bold; color: #aaa; word-break: break-all; line-height: 1.4; }
 
     #imageGallery {
       display: flex;
@@ -63,7 +63,7 @@
     <h2>FINDRONE</h2>
 
     <div>
-      <input type="text" id="targetObject" value="cup" placeholder="探すもの (例: cup, cell phone)">
+      <input type="text" id="targetObject" value="cup" placeholder="探すもの (例: cup, book)">
       <div class="btn-group">
         <button class="btn-success" onclick="updateTarget()">決定</button>
       </div>
@@ -212,12 +212,13 @@
               const score = Math.round(detection.categories[0].score * 100);
               detectedNames.push(`${categoryName}(${score}%)`);
 
+              // ターゲットと一致するかどうか
               const isTarget = categoryName.includes(currentSearchWord);
               if (isTarget) {
                 foundTarget = true;
               }
 
-              // 枠と名前（％）をキャンバスに描画
+              // 画面上のすべての物体に枠と確率％を描画（ターゲットは緑、他はグレー）
               const bbox = detection.bounding_box;
               ctx.strokeStyle = isTarget ? "#00ff00" : "#aaaaaa";
               ctx.lineWidth = isTarget ? 4 : 2;
@@ -229,7 +230,7 @@
             }
           }
 
-          // ステータスに検出されたオブジェクトと確率を必ず表示する
+          // ステータス欄に検出されたすべての物体と確率を必ず反映
           if (foundTarget) {
             status.innerText = `🎉 発見！ 検出中: ${detectedNames.join(', ')}`;
             status.style.color = "#00ff00";
@@ -258,13 +259,7 @@
     }
 
     function saveCapturedImage() {
-      const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = 160;
-      tempCanvas.height = 120;
-      const tempCtx = tempCanvas.getContext('2d');
-      tempCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
-
-      const dataUrl = tempCanvas.toDataURL('image/jpeg');
+      const dataUrl = canvas.toDataURL('image/jpeg');
       capturedImages.unshift(dataUrl);
 
       if (capturedImages.length > 10) {
