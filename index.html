@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI探偵カメラ</title>
+  <title>AI探偵カメラ（手動切り抜き版）</title>
   <link rel="stylesheet" href="style.css">
   
   <!-- MediaPipe Object Detection -->
@@ -57,9 +57,9 @@
       <div id="imageGallery" class="gallery"></div>
     </div>
 
-    <!-- ── AI登録モード画面 ── -->
+    <!-- ── AI登録モード画面（手動切り抜き対応） ── -->
     <div id="trainView" class="view-section">
-      <h2>🧠 AI登録モード</h2>
+      <h2>🧠 AI登録モード（切り抜き学習）</h2>
       
       <div class="control-group">
         <label for="newObjectName">覚える名前:</label>
@@ -70,13 +70,23 @@
 
       <button id="trainCamStartBtn" class="primary-btn" onclick="startTrainCamera()">登録用カメラ起動</button>
       
+      <!-- カメラ映像 ＆ 枠線ガイドエリア -->
       <div class="camera-container">
         <video id="trainVideo" autoplay muted playsinline></video>
+        <div id="cropGuideBox"></div>
       </div>
 
-      <button id="captureAngleBtn" class="primary-btn" onclick="captureAngleImage()" style="display:none; background: #17a2b8;">📸 このアングルを撮影・学習する</button>
+      <!-- 切り抜き調整用スライダー -->
+      <div id="cropControls" class="crop-controls" style="display:none;">
+        <p style="font-size: 12px; color: #aaa; margin: 0 0 5px 0;">スライダーでアイテムの形に枠を合わせてね</p>
+        <label>サイズ: <input type="range" id="cropSizeRange" min="20" max="90" value="50" oninput="updateCropBox()"></label>
+        <label>横位置: <input type="range" id="cropXRange" min="0" max="100" value="50" oninput="updateCropBox()"></label>
+        <label>縦位置: <input type="range" id="cropYRange" min="0" max="100" value="50" oninput="updateCropBox()"></label>
+      </div>
 
-      <h3>🖼️ 撮影したトレーニング写真</h3>
+      <button id="captureAngleBtn" class="primary-btn" onclick="captureAngleImage()" style="display:none; background: #17a2b8;">📸 この枠の中身を撮影・学習する</button>
+
+      <h3>🖼️ 切り抜いたトレーニング写真</h3>
       <div id="trainGallery" class="gallery"></div>
 
       <button class="primary-btn" onclick="trainAIModel()" style="margin-top: 15px; background: #6f42c1;">✨ AIをトレーニングする</button>
