@@ -212,22 +212,23 @@
               const score = Math.round(detection.categories[0].score * 100);
               detectedNames.push(`${categoryName}(${score}%)`);
 
-              if (categoryName.includes(currentSearchWord)) {
+              const isTarget = categoryName.includes(currentSearchWord);
+              if (isTarget) {
                 foundTarget = true;
-
-                const bbox = detection.bounding_box;
-                ctx.strokeStyle = "#00ff00";
-                ctx.lineWidth = 4;
-                ctx.strokeRect(bbox.originX, bbox.originY, bbox.width, bbox.height);
-
-                ctx.fillStyle = "#00ff00";
-                ctx.font = "16px sans-serif";
-                ctx.fillText(`${categoryName} ${score}%`, bbox.originX, bbox.originY > 20 ? bbox.originY - 5 : 20);
               }
+
+              const bbox = detection.bounding_box;
+              ctx.strokeStyle = isTarget ? "#00ff00" : "#ffffff";
+              ctx.lineWidth = isTarget ? 4 : 2;
+              ctx.strokeRect(bbox.originX, bbox.originY, bbox.width, bbox.height);
+
+              ctx.fillStyle = isTarget ? "#00ff00" : "#ffffff";
+              ctx.font = "16px sans-serif";
+              ctx.fillText(`${categoryName} ${score}%`, bbox.originX, bbox.originY > 20 ? bbox.originY - 5 : 20);
             }
           }
 
-          // 【修正】foundTarget（発見時）もパーセント付きの検出リストを緑色で表示する
+          // 【改良】条件分岐の外（前）で作成した detectedNames を使って、常にパーセントを表示する
           if (foundTarget) {
             status.innerText = `🎉 発見！ 検出中: ${detectedNames.join(', ')} (探す物: ${currentSearchWord})`;
             status.style.color = "#00ff00";
@@ -240,10 +241,11 @@
           } else {
             if (detectedNames.length > 0) {
               status.innerText = `👀 検出中: ${detectedNames.join(', ')} (探している物: ${currentSearchWord})`;
+              status.style.color = "#ccc";
             } else {
               status.innerText = `🔍 探索中... (探している物: ${currentSearchWord})`;
+              status.style.color = "#aaa";
             }
-            status.style.color = "#aaa";
           }
         } catch (e) {
           console.error("推論エラー:", e);
