@@ -7,7 +7,6 @@ let webcamRunning = false;
 let trainCameraRunning = false;
 let vision = undefined;
 
-// カスタムAI学習用
 let classifier = undefined;
 let mobilenetModel = undefined;
 let isCustomAIReady = false;
@@ -28,7 +27,6 @@ let lastVideoTime = -1;
 let currentSearchWord = "cup";
 let searchModeType = "standard";
 
-// 登録用データの管理
 let trainingData = {
   front: [],
   angle: [],
@@ -62,7 +60,6 @@ window.switchView = function(viewName) {
     tabSearch.classList.remove("active");
     tabTrain.classList.add("active");
 
-    // 登録タブを開いたときにカスタムAIを初期化
     if (!isCustomAIReady) {
       loadCustomAI();
     }
@@ -102,20 +99,19 @@ async function initializeStandardAI() {
   }
 }
 
-// 2. カスタムAI（HTML側で読み込んだグローバル変数を利用）の初期化
+// 2. カスタムAIの初期化
 async function loadCustomAI() {
   const trainStatus = document.getElementById("trainStatus");
   trainStatus.innerText = "ステータス: カスタム学習エンジンを準備中...";
   trainStatus.style.color = "#ffc107";
 
   try {
-    // windowオブジェクトに展開されたモデルを安全にロード
     if (typeof knnClassifier !== 'undefined' && typeof mobilenet !== 'undefined') {
       classifier = knnClassifier.create();
       mobilenetModel = await mobilenet.load();
       isCustomAIReady = true;
 
-      trainStatus.innerText = "ステータス: 準備完了（マルチアングル撮影できます）";
+      trainStatus.innerText = "ステータス: 準備完了（枠内に収めて撮影できます）";
       trainStatus.style.color = "#00ff00";
     } else {
       throw new Error("ライブラリが読み込まれていません");
@@ -226,7 +222,7 @@ window.startTrainCamera = async function() {
     trainCameraRunning = true;
     document.getElementById("trainCamStartBtn").style.display = "none";
     document.getElementById("captureAngleBtn").style.display = "block";
-    document.getElementById("trainStatus").innerText = "ステータス: 撮影準備OK";
+    document.getElementById("trainStatus").innerText = "ステータス: 枠内にアイテムを収めて撮影してね";
     document.getElementById("trainStatus").style.color = "#00ff00";
   } catch (err) {
     console.error(err);
@@ -241,18 +237,38 @@ function stopTrainCamera() {
   trainVideo.srcObject = null;
 }
 
+// ── 中央フレーム（切り抜き）部分だけを抽出してAIに学習させる ──
 window.captureAngleImage = async function() {
   if (!trainCameraRunning || !isCustomAIReady) return;
 
-  const activation = mobilenetModel.infer(trainVideo, true);
+  const vWidth = trainVideo.videoWidth;
+  const vHeight = trainVideo.videoHeight;
+  if (vWidth === 0 || vHeight === 0) return;
+
+  // 画面中央の正方形エリア（例: 幅・高さの半分のサイズ）を切り抜く計算
+  const cropSize = Math.min(vWidth, vHeight) * 0.6;
+  const startX = (vWidth - cropSize) / 2;
+  const startY = (vHeight - cropSize) / 2;
+
+  // 切り抜き専用の隠しキャンバスを作成
+  const cropCanvas = document.createElement('canvas');
+  cropCanvas.width = 224;  // MobileNetが処理しやすいサイズにリサイズ
+  cropCanvas.height = 224;
+  const cropCtx = cropCanvas.getContext('2d');
+
+  // ビデオの中央部分だけをキャンバスに描画（背景を削る）
+  cropCtx.drawImage(
+    trainVideo,
+    startX, startY, cropSize, cropSize, // 切り出し元
+    0, 0, 224, 224                      // 描き出し先
+  );
+
+  // 1. 切り抜いた純粋なオブジェクト画像から特徴量を抽出して学習
+  const activation = mobilenetModel.infer(cropCanvas, true);
   classifier.addExample(activation, 0);
 
-  const tempCanvas = document.createElement('canvas');
-  tempCanvas.width = 160;
-  tempCanvas.height = 120;
-  const tempCtx = tempCanvas.getContext('2d');
-  tempCtx.drawImage(trainVideo, 0, 0, tempCanvas.width, tempCanvas.height);
-  const dataUrl = tempCanvas.toDataURL('image/jpeg');
+  // 2. ギャラリー表示用のサムネイル生成
+  const dataUrl = cropCanvas.toDataURL('image/jpeg');
 
   if (currentStep === 1) {
     trainingData.front.push(dataUrl);
@@ -280,13 +296,13 @@ function updateGuideUI() {
   countText.innerText = `現在の登録枚数: 正面(${fCount}/3) | 斜め(${aCount}/3) | 遠く(${dCount}/3)`;
 
   if (currentStep === 1) {
-    guideText.innerText = "📸 ステップ1: 正面から撮影してください（あと " + (3 - fCount) + " 枚）";
+    guideText.innerText = "📸 ステップ1: 枠内にアイテムの「正面」を収めて撮影（あと " + (3 - fCount) + " 枚）";
     guideText.style.color = "#00ff00";
   } else if (currentStep === 2) {
-    guideText.innerText = "📸 ステップ2: 斜め・横から撮影してください（あと " + (3 - aCount) + " 枚）";
+    guideText.innerText = "📸 ステップ2: 枠内に「斜め」を収めて撮影（あと " + (3 - aCount) + " 枚）";
     guideText.style.color = "#ffc107";
   } else if (currentStep === 3) {
-    guideText.innerText = "📸 ステップ3: 少し離して・別角度で撮影してください（あと " + (3 - dCount) + " 枚）";
+    guideText.innerText = "📸 ステップ3: 少し離すか別角度を収めて撮影（あと " + (3 - dCount) + " 枚）";
     guideText.style.color = "#17a2b8";
   }
 }
@@ -329,6 +345,7 @@ window.trainAIModel = function() {
   }, 1000);
 };
 
+// ── メインのリアルタイム推論ループ ──
 async function predictWebcam() {
   if (!webcamRunning) return;
 
@@ -347,10 +364,24 @@ async function predictWebcam() {
       let foundTarget = false;
 
       if (searchModeType === "custom" && isTrained && classifier && classifier.getNumClasses() > 0) {
-        const activation = mobilenetModel.infer(video, true);
+        // 探索時も同様に中央部分の特徴量を切り取って判定する（背景の影響をカット）
+        const vWidth = video.videoWidth;
+        const vHeight = video.videoHeight;
+        const cropSize = Math.min(vWidth, vHeight) * 0.6;
+        const startX = (vWidth - cropSize) / 2;
+        const startY = (vHeight - cropSize) / 2;
+
+        const cropCanvas = document.createElement('canvas');
+        cropCanvas.width = 224;
+        cropCanvas.height = 224;
+        const cropCtx = cropCanvas.getContext('2d');
+        cropCtx.drawImage(video, startX, startY, cropSize, cropSize, 0, 0, 224, 224);
+
+        const activation = mobilenetModel.infer(cropCanvas, true);
         const result = await classifier.predictClass(activation);
 
-        if (result.classIndex === 0 && result.confidences[0] > 0.75) {
+        // 誤作動を防ぐため、信頼度の閾値を少し高め（0.85以上）に設定
+        if (result.classIndex === 0 && result.confidences[0] > 0.85) {
           foundTarget = true;
           const conf = Math.round(result.confidences[0] * 100);
 
