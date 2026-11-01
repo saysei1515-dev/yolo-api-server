@@ -102,7 +102,7 @@
 
     let capturedImages = [];
     let lastCaptureTime = 0;
-    let lastDetectionTime = 0;
+    let lastVideoTime = -1;
     let currentSearchWord = "cup";
 
     async function initializeAImodel() {
@@ -114,7 +114,7 @@
         objectDetector = await ObjectDetector.createFromOptions(vision, {
           baseOptions: {
             modelAssetPath: `https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite`,
-            delegate: "CPU"
+            delegate: "GPU"
           },
           scoreThreshold: 0.3,
           runningMode: runningMode
@@ -133,6 +133,7 @@
 
     initializeAImodel();
 
+    // 探すものを決定・更新する関数
     window.updateTarget = function() {
       const inputVal = document.getElementById("targetObject").value.trim().toLowerCase();
       if (inputVal === "") {
@@ -146,6 +147,8 @@
 
     window.startCamera = async function() {
       if (!objectDetector) return;
+
+      // 起動時に入力されている値も取得
       currentSearchWord = document.getElementById("targetObject").value.trim().toLowerCase();
 
       try {
@@ -155,16 +158,14 @@
         });
 
         video.srcObject = stream;
-        await video.play().catch(e => console.log("play error:", e));
-
         webcamRunning = true;
         startButton.style.display = "none";
         stopButton.style.display = "block";
         status.innerText = `ステータス: 探索中... (${currentSearchWord})`;
-        lastDetectionTime = 0;
 
-        predictWebcam();
-
+        video.onloadeddata = () => {
+          predictWebcam();
+        };
       } catch (err) {
         console.error(err);
         alert("カメラを起動できませんでした。");
@@ -196,14 +197,12 @@
         }
       }
 
-      const now = performance.now();
-      // WebViewでも確実かつスムーズに高感度で推論を回すための時間間隔チェック (約100ms毎)
-      if (now - lastDetectionTime > 100 && video.readyState >= 2) {
-        lastDetectionTime = now;
+      if (video.currentTime !== lastVideoTime) {
+        lastVideoTime = video.currentTime;
 
         try {
-          // タイムスタンプに now を使用して確実に推論を実行
-          const detections = objectDetector.detectForVideo(video, now);
+          const startTimeMs = performance.now();
+          const detections = objectDetector.detectForVideo(video, startTimeMs);
 
           ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -216,40 +215,38 @@
               const score = Math.round(detection.categories[0].score * 100);
               detectedNames.push(`${categoryName}(${score}%)`);
 
-              const isTarget = categoryName.includes(currentSearchWord);
-              if (isTarget) {
+              if (categoryName.includes(currentSearchWord)) {
                 foundTarget = true;
+
+                const bbox = detection.bounding_box;
+                ctx.strokeStyle = "#00ff00";
+                ctx.lineWidth = 4;
+                // 【修正】origin_x / origin_y を正しい大文字の originX / originY に修正
+                ctx.strokeRect(bbox.originX, bbox.originY, bbox.width, bbox.height);
+
+                ctx.fillStyle = "#00ff00";
+                ctx.font = "16px sans-serif";
+                ctx.fillText(`${categoryName} ${score}%`, bbox.originX, bbox.originY > 20 ? bbox.originY - 5 : 20);
               }
-
-              // 正しい originX / originY を使用して枠とラベルを描画
-              const bbox = detection.bounding_box;
-              ctx.strokeStyle = isTarget ? "#00ff00" : "#ffffff";
-              ctx.lineWidth = isTarget ? 4 : 2;
-              ctx.strokeRect(bbox.originX, bbox.originY, bbox.width, bbox.height);
-
-              ctx.fillStyle = isTarget ? "#00ff00" : "#ffffff";
-              ctx.font = "16px sans-serif";
-              ctx.fillText(`${categoryName} ${score}%`, bbox.originX, bbox.originY > 20 ? bbox.originY - 5 : 20);
             }
           }
 
           if (foundTarget) {
-            status.innerText = `🎉 発見！ 検出中: ${detectedNames.join(', ')} (探す物: ${currentSearchWord})`;
+            status.innerText = `🎉 発見！ (${currentSearchWord})`;
             status.style.color = "#00ff00";
 
-            const captureNow = Date.now();
-            if (captureNow - lastCaptureTime > 3000) {
+            const now = Date.now();
+            if (now - lastCaptureTime > 3000) {
               saveCapturedImage();
-              lastCaptureTime = captureNow;
+              lastCaptureTime = now;
             }
           } else {
             if (detectedNames.length > 0) {
               status.innerText = `👀 検出中: ${detectedNames.join(', ')} (探している物: ${currentSearchWord})`;
-              status.style.color = "#ccc";
             } else {
               status.innerText = `🔍 探索中... (探している物: ${currentSearchWord})`;
-              status.style.color = "#aaa";
             }
+            status.style.color = "#aaa";
           }
         } catch (e) {
           console.error("推論エラー:", e);
