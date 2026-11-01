@@ -25,12 +25,14 @@
       <button id="tabTrain" class="tab-btn" onclick="switchView('train')">🧠 AI登録モード</button>
     </div>
 
-    <!-- ── 探索モード画面 ── -->
+     <!-- ── 探索モード画面 ── -->
     <div id="searchView" class="view-section active">
       <div class="control-group">
         <label for="targetObject">探すもの:</label>
-        <input type="text" id="targetObject" value="cup" placeholder="例: cup または 登録したアイテム名">
-        <button onclick="updateTarget()">決定</button>
+        <div style="display: flex; gap: 5px;">
+          <input type="text" id="targetObject" value="cup" placeholder="例: cup または 登録したアイテム名" style="flex: 1;">
+          <button onclick="updateTarget()" style="padding: 0 15px; background: #007bff; color: #fff; border: none; font-weight: bold; border-radius: 4px; cursor: pointer;">決定</button>
+        </div>
       </div>
 
       <div class="control-group">
