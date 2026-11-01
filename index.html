@@ -114,7 +114,7 @@
         objectDetector = await ObjectDetector.createFromOptions(vision, {
           baseOptions: {
             modelAssetPath: `https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite`,
-            delegate: "CPU"
+            delegate: "CPU" // WebViewでも確実なCPUモード
           },
           scoreThreshold: 0.3,
           runningMode: runningMode
@@ -160,9 +160,9 @@
         stopButton.style.display = "block";
         status.innerText = `ステータス: 探索中... (${currentSearchWord})`;
 
-        video.onloadeddata = () => {
-          predictWebcam();
-        };
+        // 【改善】onloadeddataイベントに頼らず、カメラ起動直後に直接ループを強制スタート
+        predictWebcam();
+
       } catch (err) {
         console.error(err);
         alert("カメラを起動できませんでした。");
@@ -194,11 +194,10 @@
         }
       }
 
-      if (video.currentTime !== lastVideoTime) {
-        lastVideoTime = video.currentTime;
-
-        try {
-          const startTimeMs = performance.now();
+      try {
+        const startTimeMs = performance.now();
+        // 映像が有効であれば推論を実行
+        if (video.readyState >= 2) {
           const detections = objectDetector.detectForVideo(video, startTimeMs);
 
           ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -217,7 +216,7 @@
                 foundTarget = true;
               }
 
-              // ステップ1: すべての検出物に枠とラベルを描画（ターゲットは緑、それ以外は白）
+              // すべての検出物に枠とラベルを描画
               const bbox = detection.bounding_box;
               ctx.strokeStyle = isTarget ? "#00ff00" : "#ffffff";
               ctx.lineWidth = isTarget ? 4 : 2;
@@ -229,7 +228,6 @@
             }
           }
 
-          // ステータス欄の表示（発見時は緑文字、通常時は検出リストを表示）
           if (foundTarget) {
             status.innerText = `🎉 発見！ 検出中: ${detectedNames.join(', ')} (探す物: ${currentSearchWord})`;
             status.style.color = "#00ff00";
@@ -248,9 +246,9 @@
               status.style.color = "#aaa";
             }
           }
-        } catch (e) {
-          console.error("推論エラー:", e);
         }
+      } catch (e) {
+        console.error("推論エラー:", e);
       }
 
       if (webcamRunning) {
