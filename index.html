@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FINDRONE</title>
+  <title>AI探偵カメラ（ローカルAI版）</title>
   <!-- MediaPipe Object Detection のライブラリ -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.2"></script>
   <style>
@@ -38,7 +38,7 @@
       object-fit: cover;
     }
 
-    #status { margin-top: 10px; font-size: 14px; font-weight: bold; color: #aaa; word-break: break-all; line-height: 1.4; }
+    #status { margin-top: 10px; font-size: 15px; font-weight: bold; color: #aaa; word-break: break-all; }
 
     #imageGallery {
       display: flex;
@@ -60,10 +60,10 @@
 </head>
 <body>
   <div class="container">
-    <h2>FINDRONE</h2>
+    <h2>🔍 AI探偵カメラ（ローカル）</h2>
 
     <div>
-      <input type="text" id="targetObject" value="cup" placeholder="探すもの (例: cup, book)">
+      <input type="text" id="targetObject" value="cup" placeholder="探すもの (例: cup, cell phone)">
       <div class="btn-group">
         <button class="btn-success" onclick="updateTarget()">決定</button>
       </div>
@@ -133,6 +133,7 @@
 
     initializeAImodel();
 
+    // 探すものを決定・更新する関数
     window.updateTarget = function() {
       const inputVal = document.getElementById("targetObject").value.trim().toLowerCase();
       if (inputVal === "") {
@@ -146,6 +147,8 @@
 
     window.startCamera = async function() {
       if (!objectDetector) return;
+
+      // 起動時に入力されている値も取得
       currentSearchWord = document.getElementById("targetObject").value.trim().toLowerCase();
 
       try {
@@ -212,26 +215,23 @@
               const score = Math.round(detection.categories[0].score * 100);
               detectedNames.push(`${categoryName}(${score}%)`);
 
-              const isTarget = categoryName.includes(currentSearchWord);
-              if (isTarget) {
+              if (categoryName.includes(currentSearchWord)) {
                 foundTarget = true;
+
+                const bbox = detection.bounding_box;
+                ctx.strokeStyle = "#00ff00";
+                ctx.lineWidth = 4;
+                ctx.strokeRect(bbox.origin_x, bbox.origin_y, bbox.width, bbox.height);
+
+                ctx.fillStyle = "#00ff00";
+                ctx.font = "16px sans-serif";
+                ctx.fillText(`${categoryName} ${score}%`, bbox.origin_x, bbox.origin_y > 20 ? bbox.origin_y - 5 : 20);
               }
-
-              // 枠と名前（％）の描画
-              const bbox = detection.bounding_box;
-              ctx.strokeStyle = isTarget ? "#00ff00" : "#aaaaaa";
-              ctx.lineWidth = isTarget ? 4 : 2;
-              ctx.strokeRect(bbox.origin_x, bbox.origin_y, bbox.width, bbox.height);
-
-              ctx.fillStyle = isTarget ? "#00ff00" : "#aaaaaa";
-              ctx.font = "16px sans-serif";
-              ctx.fillText(`${categoryName} ${score}%`, bbox.origin_x, bbox.origin_y > 20 ? bbox.origin_y - 5 : 20);
             }
           }
 
-          // ステータスに検出状況を必ず反映する
           if (foundTarget) {
-            status.innerText = `🎉 発見！ 検出中: ${detectedNames.join(', ')}`;
+            status.innerText = `🎉 発見！ (${currentSearchWord})`;
             status.style.color = "#00ff00";
 
             const now = Date.now();
@@ -241,9 +241,9 @@
             }
           } else {
             if (detectedNames.length > 0) {
-              status.innerText = `👀 検出中: ${detectedNames.join(', ')} (探す物: ${currentSearchWord})`;
+              status.innerText = `👀 検出中: ${detectedNames.join(', ')} (探している物: ${currentSearchWord})`;
             } else {
-              status.innerText = `🔍 探索中... (探す物: ${currentSearchWord})`;
+              status.innerText = `🔍 探索中... (探している物: ${currentSearchWord})`;
             }
             status.style.color = "#aaa";
           }
@@ -258,7 +258,13 @@
     }
 
     function saveCapturedImage() {
-      const dataUrl = canvas.toDataURL('image/jpeg');
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = 160;
+      tempCanvas.height = 120;
+      const tempCtx = tempCanvas.getContext('2d');
+      tempCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
+
+      const dataUrl = tempCanvas.toDataURL('image/jpeg');
       capturedImages.unshift(dataUrl);
 
       if (capturedImages.length > 10) {
