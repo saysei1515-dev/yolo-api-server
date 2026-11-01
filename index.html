@@ -215,23 +215,25 @@
               const score = Math.round(detection.categories[0].score * 100);
               detectedNames.push(`${categoryName}(${score}%)`);
 
-              if (categoryName.includes(currentSearchWord)) {
+              const isTarget = categoryName.includes(currentSearchWord);
+              if (isTarget) {
                 foundTarget = true;
-
-                const bbox = detection.bounding_box;
-                ctx.strokeStyle = "#00ff00";
-                ctx.lineWidth = 4;
-                ctx.strokeRect(bbox.origin_x, bbox.origin_y, bbox.width, bbox.height);
-
-                ctx.fillStyle = "#00ff00";
-                ctx.font = "16px sans-serif";
-                ctx.fillText(`${categoryName} ${score}%`, bbox.origin_x, bbox.origin_y > 20 ? bbox.origin_y - 5 : 20);
               }
+
+              // 【追加機能】ターゲットなら緑の枠、それ以外の物体なら白い枠を描画
+              const bbox = detection.bounding_box;
+              ctx.strokeStyle = isTarget ? "#00ff00" : "#ffffff";
+              ctx.lineWidth = isTarget ? 4 : 2;
+              ctx.strokeRect(bbox.origin_x, bbox.origin_y, bbox.width, bbox.height);
+
+              ctx.fillStyle = isTarget ? "#00ff00" : "#ffffff";
+              ctx.font = "16px sans-serif";
+              ctx.fillText(`${categoryName} ${score}%`, bbox.origin_x, bbox.origin_y > 20 ? bbox.origin_y - 5 : 20);
             }
           }
 
           if (foundTarget) {
-            status.innerText = `🎉 발견！ (${currentSearchWord})`;
+            status.innerText = `🎉 発見！ (${currentSearchWord}) - 検出: ${detectedNames.join(', ')}`;
             status.style.color = "#00ff00";
 
             const now = Date.now();
