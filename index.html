@@ -12,7 +12,7 @@
     button { background: #007bff; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
     button:active { background: #0056b3; }
     .container { max-width: 400px; margin: 0 auto; background: #1e1e1e; padding: 15px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
-    
+
     .video-container {
       position: relative;
       width: 100%;
@@ -105,7 +105,7 @@
           scoreThreshold: 0.3,
           runningMode: runningMode
         });
-        
+
         startButton.disabled = false;
         startButton.innerText = "カメラ起動 & 探索スタート";
         status.innerText = "ステータス: 準備完了";
@@ -124,7 +124,7 @@
 
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment' }, // ★ここを 'environment'（外カメラ）に変更しました！
+          video: { facingMode: 'environment' }, // 外カメラ
           audio: false
         });
 
@@ -154,13 +154,13 @@
 
       if (video.currentTime !== lastVideoTime) {
         lastVideoTime = video.currentTime;
-        
+
         try {
           const startTimeMs = performance.now();
           const detections = objectDetector.detectForVideo(video, startTimeMs);
-          
+
           ctx.clearRect(0, 0, canvas.width, canvas.height);
-          
+
           const targetWord = document.getElementById("targetObject").value.trim().toLowerCase();
           let foundTarget = false;
           let detectedNames = [];
@@ -173,12 +173,12 @@
 
               if (categoryName.includes(targetWord)) {
                 foundTarget = true;
-                
+
                 const bbox = detection.bounding_box;
                 ctx.strokeStyle = "#00ff00";
                 ctx.lineWidth = 4;
                 ctx.strokeRect(bbox.origin_x, bbox.origin_y, bbox.width, bbox.height);
-                
+
                 ctx.fillStyle = "#00ff00";
                 ctx.font = "16px sans-serif";
                 ctx.fillText(`${categoryName} ${score}%`, bbox.origin_x, bbox.origin_y > 20 ? bbox.origin_y - 5 : 20);
@@ -218,4 +218,24 @@
       tempCanvas.width = 160;
       tempCanvas.height = 120;
       const tempCtx = tempCanvas.getContext('2d');
-      tempCtx.drawImage(video
+      tempCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
+      
+      const dataUrl = tempCanvas.toDataURL('image/jpeg');
+      capturedImages.unshift(dataUrl);
+
+      if (capturedImages.length > 10) {
+        capturedImages.pop();
+      }
+
+      const gallery = document.getElementById('imageGallery');
+      gallery.innerHTML = '';
+      capturedImages.forEach(src => {
+        const img = document.createElement('img');
+        img.src = src;
+        img.className = 'captured-thumb';
+        gallery.appendChild(img);
+      });
+    }
+  </script>
+</body>
+</html>
