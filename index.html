@@ -102,7 +102,7 @@
 
     let capturedImages = [];
     let lastCaptureTime = 0;
-    let lastVideoTime = -1;
+    let lastDetectionTime = 0; // WebView用の安定推論タイマー
     let currentSearchWord = "cup";
 
     async function initializeAImodel() {
@@ -161,7 +161,7 @@
         startButton.style.display = "none";
         stopButton.style.display = "block";
         status.innerText = `ステータス: 探索中... (${currentSearchWord})`;
-        lastVideoTime = -1; // タイマーリセット
+        lastDetectionTime = 0;
 
         predictWebcam();
 
@@ -196,13 +196,13 @@
         }
       }
 
-      // 【修正】動画のフレームが進んだ時だけ正確にAI推論を実行する元の正しい仕組みに戻しました
-      if (video.currentTime !== lastVideoTime) {
-        lastVideoTime = video.currentTime;
+      const now = performance.now();
+      // 【WebView対策】video.currentTimeではなく時間間隔(約150ms毎)で安定して推論を実行
+      if (now - lastDetectionTime > 150 && video.readyState >= 2) {
+        lastDetectionTime = now;
 
         try {
-          const startTimeMs = performance.now();
-          const detections = objectDetector.detectForVideo(video, startTimeMs);
+          const detections = objectDetector.detectForVideo(video, now);
 
           ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -220,7 +220,7 @@
                 foundTarget = true;
               }
 
-              // 枠とラベルの描画（ターゲットは緑、それ以外は白）
+              // 枠とラベルの描画（originX / originY を使用）
               const bbox = detection.bounding_box;
               ctx.strokeStyle = isTarget ? "#00ff00" : "#ffffff";
               ctx.lineWidth = isTarget ? 4 : 2;
@@ -236,10 +236,10 @@
             status.innerText = `🎉 発見！ 検出中: ${detectedNames.join(', ')} (探す物: ${currentSearchWord})`;
             status.style.color = "#00ff00";
 
-            const now = Date.now();
-            if (now - lastCaptureTime > 3000) {
+            const captureNow = Date.now();
+            if (captureNow - lastCaptureTime > 3000) {
               saveCapturedImage();
-              lastCaptureTime = now;
+              lastCaptureTime = captureNow;
             }
           } else {
             if (detectedNames.length > 0) {
