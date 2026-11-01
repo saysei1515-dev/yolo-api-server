@@ -133,7 +133,6 @@
 
     initializeAImodel();
 
-    // 探すものを決定・更新する関数
     window.updateTarget = function() {
       const inputVal = document.getElementById("targetObject").value.trim().toLowerCase();
       if (inputVal === "") {
@@ -147,8 +146,6 @@
 
     window.startCamera = async function() {
       if (!objectDetector) return;
-
-      // 起動時に入力されている値も取得
       currentSearchWord = document.getElementById("targetObject").value.trim().toLowerCase();
 
       try {
@@ -172,7 +169,7 @@
       }
     };
 
-    window.stopCamera = function() {
+    window.stopButton = window.stopCamera = function() {
       webcamRunning = false;
       const stream = video.srcObject;
       if (stream) {
@@ -220,7 +217,7 @@
                 foundTarget = true;
               }
 
-              // 【追加機能】ターゲットなら緑の枠、それ以外の物体なら白い枠を描画
+              // ターゲットなら緑枠、それ以外は白枠
               const bbox = detection.bounding_box;
               ctx.strokeStyle = isTarget ? "#00ff00" : "#ffffff";
               ctx.lineWidth = isTarget ? 4 : 2;
@@ -232,9 +229,10 @@
             }
           }
 
+          // 見つかったときは緑文字で詳細を表示、それ以外は通常の検出中表示
           if (foundTarget) {
-            status.innerText = `🎉 発見！ (${currentSearchWord}) - 検出: ${detectedNames.join(', ')}`;
-            status.style.color = "#00ff00";
+            status.innerText = `🎉 発見！ 検出中: ${detectedNames.join(', ')} (探す物: ${currentSearchWord})`;
+            status.style.color = "#00ff00"; // 緑文字
 
             const now = Date.now();
             if (now - lastCaptureTime > 3000) {
@@ -244,10 +242,11 @@
           } else {
             if (detectedNames.length > 0) {
               status.innerText = `👀 検出中: ${detectedNames.join(', ')} (探している物: ${currentSearchWord})`;
+              status.style.color = "#ccc"; // 白っぽいグレー
             } else {
               status.innerText = `🔍 探索中... (探している物: ${currentSearchWord})`;
+              status.style.color = "#aaa"; // 薄いグレー
             }
-            status.style.color = "#aaa";
           }
         } catch (e) {
           console.error("推論エラー:", e);
