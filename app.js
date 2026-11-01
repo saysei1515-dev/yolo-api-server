@@ -26,19 +26,13 @@ let lastVideoTime = -1;
 let currentSearchWord = "cup";
 let searchModeType = "standard";
 
-let trainingData = {
-  front: [],
-  angle: [],
-  far: []
-};
-let currentStep = 1;
+let capturedCount = 0;
 
 const modelPaths = {
   lite0: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite",
   lite2: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite2/float16/1/efficientdet_lite2.tflite"
 };
 
-// ── タブ切り替え ──
 window.switchView = function(viewName) {
   if (webcamRunning) stopCamera();
   if (trainCameraRunning) stopTrainCamera();
@@ -65,7 +59,6 @@ window.switchView = function(viewName) {
   }
 };
 
-// 1. 標準AIの初期化
 async function initializeStandardAI() {
   startButton.disabled = true;
   status.innerText = "ステータス: 標準AIモデルをロード中...";
@@ -98,7 +91,6 @@ async function initializeStandardAI() {
   }
 }
 
-// 2. カスタムAIの初期化
 async function loadCustomAI() {
   const trainStatus = document.getElementById("trainStatus");
   trainStatus.innerText = "ステータス: カスタム学習エンジンを準備中...";
@@ -110,7 +102,7 @@ async function loadCustomAI() {
       mobilenetModel = await mobilenet.load();
       isCustomAIReady = true;
 
-      trainStatus.innerText = "ステータス: 準備完了（切り抜き撮影できます）";
+      trainStatus.innerText = "ステータス: 準備完了";
       trainStatus.style.color = "#00ff00";
     } else {
       throw new Error("ライブラリが読み込まれていません");
@@ -204,7 +196,6 @@ window.stopCamera = function() {
   status.style.color = "#aaa";
 };
 
-// ── 登録モード用カメラ制御 ──
 window.startTrainCamera = async function() {
   if (!isCustomAIReady) {
     alert("カスタムAIの準備中です。少し待ってからもう一度押してください。");
@@ -220,8 +211,7 @@ window.startTrainCamera = async function() {
     trainCameraRunning = true;
     document.getElementById("trainCamStartBtn").style.display = "none";
     document.getElementById("captureAngleBtn").style.display = "block";
-    document.getElementById("cropGuideBox").style.display = "block";
-    document.getElementById("trainStatus").innerText = "ステータス: リモコンを枠に合わせてね";
+    document.getElementById("trainStatus").innerText = "ステータス: 撮影準備OK";
     document.getElementById("trainStatus").style.color = "#00ff00";
   } catch (err) {
     console.error(err);
@@ -236,112 +226,29 @@ function stopTrainCamera() {
   trainVideo.srcObject = null;
 }
 
-// 枠の調整UIを連動させる関数
-window.updateCropBox = function() {
-  const size = document.getElementById("cropSizeRange").value;
-  const x = document.getElementById("cropXRange").value;
-  const y = document.getElementById("cropYRange").value;
-
-  const box = document.getElementById("cropGuideBox");
-  box.style.width = size + "%";
-  box.style.height = size + "%";
-  box.style.left = (x - size / 2) + "%";
-  box.style.top = (y - size / 2) + "%";
-};
-
-window.prepareCapture = function() {
-  if (!trainCameraRunning) return;
-  document.getElementById("captureAngleBtn").style.display = "none";
-  document.getElementById("cropControls").style.display = "block";
-  document.getElementById("trainStatus").innerText = "ステータス: スライダーでリモコンの位置に枠を合わせてね";
-};
-
-// プレイヤーが指定した枠の中身だけを正確に切り抜いて学習
-window.captureWithCrop = async function() {
+window.captureAngleImage = async function() {
   if (!trainCameraRunning || !isCustomAIReady) return;
 
-  const vWidth = trainVideo.videoWidth;
-  const vHeight = trainVideo.videoHeight;
-  if (vWidth === 0 || vHeight === 0) return;
-
-  const sizeVal = document.getElementById("cropSizeRange").value / 100;
-  const xVal = document.getElementById("cropXRange").value / 100;
-  const yVal = document.getElementById("cropYRange").value / 100;
-
-  const cropW = vWidth * sizeVal;
-  const cropH = vHeight * sizeVal;
-  const cropX = (vWidth * xVal) - (cropW / 2);
-  const cropY = (vHeight * yVal) - (cropH / 2);
-
-  const cropCanvas = document.createElement('canvas');
-  cropCanvas.width = 224;
-  cropCanvas.height = 224;
-  const cropCtx = cropCanvas.getContext('2d');
-
-  cropCtx.drawImage(
-    trainVideo,
-    Math.max(0, cropX), Math.max(0, cropY), cropW, cropH,
-    0, 0, 224, 224
-  );
-
-  const activation = mobilenetModel.infer(cropCanvas, true);
+  const activation = mobilenetModel.infer(trainVideo, true);
   classifier.addExample(activation, 0);
 
-  const dataUrl = cropCanvas.toDataURL('image/jpeg');
+  capturedCount++;
 
-  if (currentStep === 1) {
-    trainingData.front.push(dataUrl);
-    if (trainingData.front.length >= 3) currentStep = 2;
-  } else if (currentStep === 2) {
-    trainingData.angle.push(dataUrl);
-    if (trainingData.angle.length >= 3) currentStep = 3;
-  } else if (currentStep === 3) {
-    trainingData.far.push(dataUrl);
-    if (trainingData.far.length >= 3) currentStep = 1;
-  }
+  const tempCanvas = document.createElement('canvas');
+  tempCanvas.width = 160;
+  tempCanvas.height = 120;
+  const tempCtx = tempCanvas.getContext('2d');
+  tempCtx.drawImage(trainVideo, 0, 0, tempCanvas.width, tempCanvas.height);
+  const dataUrl = tempCanvas.toDataURL('image/jpeg');
 
-  updateGuideUI();
-  updateTrainGallery();
-
-  // 調整UIを閉じて次の撮影へ
-  document.getElementById("cropControls").style.display = "none";
-  document.getElementById("captureAngleBtn").style.display = "block";
-};
-
-function updateGuideUI() {
-  const guideText = document.getElementById("angleGuideText");
-  const countText = document.getElementById("angleCountText");
-
-  const fCount = trainingData.front.length;
-  const aCount = trainingData.angle.length;
-  const dCount = trainingData.far.length;
-
-  countText.innerText = `現在の登録枚数: 正面(${fCount}/3) | 斜め(${aCount}/3) | 遠く(${dCount}/3)`;
-
-  if (currentStep === 1) {
-    guideText.innerText = "📸 ステップ1: リモコンの「正面」を枠に合わせて撮影（あと " + (3 - fCount) + " 枚）";
-    guideText.style.color = "#00ff00";
-  } else if (currentStep === 2) {
-    guideText.innerText = "📸 ステップ2: リモコンの「斜め」を枠に合わせて撮影（あと " + (3 - aCount) + " 枚）";
-    guideText.style.color = "#ffc107";
-  } else if (currentStep === 3) {
-    guideText.innerText = "📸 ステップ3: 少し離して枠に合わせて撮影（あと " + (3 - dCount) + " 枚）";
-    guideText.style.color = "#17a2b8";
-  }
-}
-
-function updateTrainGallery() {
   const gallery = document.getElementById('trainGallery');
-  gallery.innerHTML = '';
-  
-  const allImgs = [...trainingData.front, ...trainingData.angle, ...trainingData.far];
-  allImgs.forEach(src => {
-    const img = document.createElement('img');
-    img.src = src;
-    img.className = 'captured-thumb';
-    gallery.appendChild(img);
-  });
-}
+  const img = document.createElement('img');
+  img.src = dataUrl;
+  img.className = 'captured-thumb';
+  gallery.appendChild(img);
+
+  document.getElementById("trainStatus").innerText = `ステータス: ${capturedCount}枚の写真を取り込みました！`;
+};
 
 window.trainAIModel = function() {
   const nameInput = document.getElementById("newObjectName").value.trim();
@@ -349,8 +256,7 @@ window.trainAIModel = function() {
     alert("アイテム名を入力してください！");
     return;
   }
-  const totalPhotos = trainingData.front.length + trainingData.angle.length + trainingData.far.length;
-  if (totalPhotos < 3) {
+  if (capturedCount < 3) {
     alert("もう少し写真を撮影してからトレーニングしてください！");
     return;
   }
@@ -358,17 +264,11 @@ window.trainAIModel = function() {
   customTargetName = nameInput;
   isTrained = true;
 
-  document.getElementById("trainStatus").innerText = `ステータス: 「${customTargetName}」のAI学習を完了しました！`;
-  document.getElementById("trainStatus").style.color = "#ffc107";
-
-  setTimeout(() => {
-    document.getElementById("trainStatus").innerText = `🎉 成功！「${customTargetName}」を覚えました！`;
-    document.getElementById("trainStatus").style.color = "#00ff00";
-    document.getElementById("targetObject").value = customTargetName;
-  }, 1000);
+  document.getElementById("trainStatus").innerText = `🎉 成功！「${customTargetName}」を覚えました！`;
+  document.getElementById("trainStatus").style.color = "#00ff00";
+  document.getElementById("targetObject").value = customTargetName;
 };
 
-// ── 探索時の推論ループ（探索時もプレイヤーの指定通り中央部分を厳格に判定） ──
 async function predictWebcam() {
   if (!webcamRunning) return;
 
@@ -387,23 +287,10 @@ async function predictWebcam() {
       let foundTarget = false;
 
       if (searchModeType === "custom" && isTrained && classifier && classifier.getNumClasses() > 0) {
-        const vWidth = video.videoWidth;
-        const vHeight = video.videoHeight;
-        const cropSize = Math.min(vWidth, vHeight) * 0.5;
-        const startX = (vWidth - cropSize) / 2;
-        const startY = (vHeight - cropSize) / 2;
-
-        const cropCanvas = document.createElement('canvas');
-        cropCanvas.width = 224;
-        cropCanvas.height = 224;
-        const cropCtx = cropCanvas.getContext('2d');
-        cropCtx.drawImage(video, startX, startY, cropSize, cropSize, 0, 0, 224, 224);
-
-        const activation = mobilenetModel.infer(cropCanvas, true);
+        const activation = mobilenetModel.infer(video, true);
         const result = await classifier.predictClass(activation);
 
-        // 誤作動を防ぐため信頼度を 0.85 以上に厳格化
-        if (result.classIndex === 0 && result.confidences[0] > 0.85) {
+        if (result.classIndex === 0 && result.confidences[0] > 0.80) {
           foundTarget = true;
           const conf = Math.round(result.confidences[0] * 100);
 
@@ -418,7 +305,7 @@ async function predictWebcam() {
           status.innerText = `🎉 発見！自作アイテム: ${customTargetName} (${conf}%)`;
           status.style.color = "#00ff00";
         } else {
-          status.innerText = `🔍 カスタム探索中... (探している物: ${customTargetName})`;
+          status.innerText = `🔍 カスタム探索中... (${customTargetName})`;
           status.style.color = "#aaa";
         }
 
@@ -454,17 +341,9 @@ async function predictWebcam() {
           if (detectedNames.length > 0) {
             status.innerText = `👀 検出中: ${detectedNames.join(', ')} (探している物: ${currentSearchWord})`;
           } else {
-            status.innerText = `🔍 探索中... (探している物: ${currentSearchWord})`;
+            status.innerText = `🔍 探索中... (${currentSearchWord})`;
           }
           status.style.color = "#aaa";
-        }
-      }
-
-      if (foundTarget) {
-        const now = Date.now();
-        if (now - lastCaptureTime > 3000) {
-          saveCapturedImage();
-          lastCaptureTime = now;
         }
       }
 
@@ -476,26 +355,4 @@ async function predictWebcam() {
   if (webcamRunning) {
     window.requestAnimationFrame(predictWebcam);
   }
-}
-
-function saveCapturedImage() {
-  const tempCanvas = document.createElement('canvas');
-  tempCanvas.width = 160;
-  tempCanvas.height = 120;
-  const tempCtx = tempCanvas.getContext('2d');
-  tempCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
-
-  const dataUrl = tempCanvas.toDataURL('image/jpeg');
-  capturedImages.unshift(dataUrl);
-
-  if (capturedImages.length > 10) capturedImages.pop();
-
-  const gallery = document.getElementById('imageGallery');
-  gallery.innerHTML = '';
-  capturedImages.forEach(src => {
-    const img = document.createElement('img');
-    img.src = src;
-    img.className = 'captured-thumb';
-    gallery.appendChild(img);
-  });
 }
