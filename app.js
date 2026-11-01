@@ -25,7 +25,6 @@ let lastCaptureTime = 0;
 let lastVideoTime = -1;
 let currentSearchWord = "cup";
 let searchModeType = "standard";
-
 let capturedCount = 0;
 
 const modelPaths = {
@@ -196,6 +195,7 @@ window.stopCamera = function() {
   status.style.color = "#aaa";
 };
 
+// ── 登録モード用カメラ制御 ──
 window.startTrainCamera = async function() {
   if (!isCustomAIReady) {
     alert("カスタムAIの準備中です。少し待ってからもう一度押してください。");
@@ -211,7 +211,9 @@ window.startTrainCamera = async function() {
     trainCameraRunning = true;
     document.getElementById("trainCamStartBtn").style.display = "none";
     document.getElementById("captureAngleBtn").style.display = "block";
-    document.getElementById("trainStatus").innerText = "ステータス: 撮影準備OK";
+    document.getElementById("cropGuideBox").style.display = "block";
+    document.getElementById("cropControls").style.display = "block";
+    document.getElementById("trainStatus").innerText = "ステータス: リモコンの形に枠を合わせよう";
     document.getElementById("trainStatus").style.color = "#00ff00";
   } catch (err) {
     console.error(err);
@@ -226,28 +228,63 @@ function stopTrainCamera() {
   trainVideo.srcObject = null;
 }
 
+// 枠の動きをスライダーに連動させる
+window.updateCropBox = function() {
+  const size = document.getElementById("cropSizeRange").value;
+  const x = document.getElementById("cropXRange").value;
+  const y = document.getElementById("cropYRange").value;
+
+  const box = document.getElementById("cropGuideBox");
+  box.style.width = size + "%";
+  box.style.height = size + "%";
+  box.style.left = (x - size / 2) + "%";
+  box.style.top = (y - size / 2) + "%";
+};
+
+// スライダーの位置を元に、ビデオ映像からピンポイントで切り抜いて学習
 window.captureAngleImage = async function() {
   if (!trainCameraRunning || !isCustomAIReady) return;
 
-  const activation = mobilenetModel.infer(trainVideo, true);
+  const vWidth = trainVideo.videoWidth;
+  const vHeight = trainVideo.videoHeight;
+  if (vWidth === 0 || vHeight === 0) return;
+
+  const sizeVal = document.getElementById("cropSizeRange").value / 100;
+  const xVal = document.getElementById("cropXRange").value / 100;
+  const yVal = document.getElementById("cropYRange").value / 100;
+
+  const cropW = vWidth * sizeVal;
+  const cropH = vHeight * sizeVal;
+  const cropX = (vWidth * xVal) - (cropW / 2);
+  const cropY = (vHeight * yVal) - (cropH / 2);
+
+  // 切り抜き用のキャンバスを作成
+  const cropCanvas = document.createElement('canvas');
+  cropCanvas.width = 224;
+  cropCanvas.height = 224;
+  const cropCtx = cropCanvas.getContext('2d');
+
+  cropCtx.drawImage(
+    trainVideo,
+    Math.max(0, cropX), Math.max(0, cropY), cropW, cropH,
+    0, 0, 224, 224
+  );
+
+  // 切り抜いた部分だけをAIに覚えさせる
+  const activation = mobilenetModel.infer(cropCanvas, true);
   classifier.addExample(activation, 0);
 
   capturedCount++;
 
-  const tempCanvas = document.createElement('canvas');
-  tempCanvas.width = 160;
-  tempCanvas.height = 120;
-  const tempCtx = tempCanvas.getContext('2d');
-  tempCtx.drawImage(trainVideo, 0, 0, tempCanvas.width, tempCanvas.height);
-  const dataUrl = tempCanvas.toDataURL('image/jpeg');
-
+  // ギャラリーに切り抜き後のお手本画像を表示
+  const dataUrl = cropCanvas.toDataURL('image/jpeg');
   const gallery = document.getElementById('trainGallery');
   const img = document.createElement('img');
   img.src = dataUrl;
   img.className = 'captured-thumb';
   gallery.appendChild(img);
 
-  document.getElementById("trainStatus").innerText = `ステータス: ${capturedCount}枚の写真を取り込みました！`;
+  document.getElementById("trainStatus").innerText = `ステータス: 切り抜き写真 ${capturedCount}枚目を学習しました！`;
 };
 
 window.trainAIModel = function() {
@@ -264,11 +301,12 @@ window.trainAIModel = function() {
   customTargetName = nameInput;
   isTrained = true;
 
-  document.getElementById("trainStatus").innerText = `🎉 成功！「${customTargetName}」を覚えました！`;
+  document.getElementById("trainStatus").innerText = `🎉 成功！「${customTargetName}」の切り抜き学習を完了しました！`;
   document.getElementById("trainStatus").style.color = "#00ff00";
   document.getElementById("targetObject").value = customTargetName;
 };
 
+// ── 探索時も同様に中央または指定範囲をトリミングして厳格に判定 ──
 async function predictWebcam() {
   if (!webcamRunning) return;
 
@@ -287,10 +325,23 @@ async function predictWebcam() {
       let foundTarget = false;
 
       if (searchModeType === "custom" && isTrained && classifier && classifier.getNumClasses() > 0) {
-        const activation = mobilenetModel.infer(video, true);
+        const vWidth = video.videoWidth;
+        const vHeight = video.videoHeight;
+        const cropSize = Math.min(vWidth, vHeight) * 0.6;
+        const startX = (vWidth - cropSize) / 2;
+        const startY = (vHeight - cropSize) / 2;
+
+        const cropCanvas = document.createElement('canvas');
+        cropCanvas.width = 224;
+        cropCanvas.height = 224;
+        const cropCtx = cropCanvas.getContext('2d');
+        cropCtx.drawImage(video, startX, startY, cropSize, cropSize, 0, 0, 224, 224);
+
+        const activation = mobilenetModel.infer(cropCanvas, true);
         const result = await classifier.predictClass(activation);
 
-        if (result.classIndex === 0 && result.confidences[0] > 0.80) {
+        // 誤作動を防ぐため信頼度を 0.85 以上に厳格化
+        if (result.classIndex === 0 && result.confidences[0] > 0.85) {
           foundTarget = true;
           const conf = Math.round(result.confidences[0] * 100);
 
