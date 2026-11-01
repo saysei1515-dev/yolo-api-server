@@ -133,7 +133,6 @@
 
     initializeAImodel();
 
-    // 探すものを決定・更新する関数
     window.updateTarget = function() {
       const inputVal = document.getElementById("targetObject").value.trim().toLowerCase();
       if (inputVal === "") {
@@ -147,8 +146,6 @@
 
     window.startCamera = async function() {
       if (!objectDetector) return;
-
-      // 起動時に入力されている値も取得
       currentSearchWord = document.getElementById("targetObject").value.trim().toLowerCase();
 
       try {
@@ -204,7 +201,7 @@
           const startTimeMs = performance.now();
           const detections = objectDetector.detectForVideo(video, startTimeMs);
 
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
+     ;     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
           let foundTarget = false;
           let detectedNames = [];
@@ -213,26 +210,31 @@
             for (let detection of detections.detections) {
               const categoryName = detection.categories[0].categoryName.toLowerCase();
               const score = Math.round(detection.categories[0].score * 100);
+              
+              // 【改良】AIが検知した名前と、自分が指定した名前を両方わかりやすくリスト化
               detectedNames.push(`${categoryName}(${score}%)`);
 
-              if (categoryName.includes(currentSearchWord)) {
+              // 指定した文字が含まれているか比較
+              const isTarget = categoryName.includes(currentSearchWord);
+              if (isTarget) {
                 foundTarget = true;
-
-                const bbox = detection.bounding_box;
-                ctx.strokeStyle = "#00ff00";
-                ctx.lineWidth = 4;
-                // 【修正】origin_x / origin_y を正しい大文字の originX / originY に修正
-                ctx.strokeRect(bbox.originX, bbox.originY, bbox.width, bbox.height);
-
-                ctx.fillStyle = "#00ff00";
-                ctx.font = "16px sans-serif";
-                ctx.fillText(`${categoryName} ${score}%`, bbox.originX, bbox.originY > 20 ? bbox.originY - 5 : 20);
               }
+
+              // 枠とラベルの描画（ターゲットなら緑、それ以外は白で両方表示）
+              const bbox = detection.bounding_box;
+              ctx.strokeStyle = isTarget ? "#00ff00" : "#ffffff";
+              ctx.lineWidth = isTarget ? 4 : 2;
+              ctx.strokeRect(bbox.originX, bbox.originY, bbox.width, bbox.height);
+
+              ctx.fillStyle = isTarget ? "#00ff00" : "#ffffff";
+              ctx.font = "16px sans-serif";
+              ctx.fillText(`${categoryName} ${score}%`, bbox.originX, bbox.originY > 20 ? bbox.originY - 5 : 20);
             }
           }
 
+          // ステータス表示：AIが何を見つけていて、自分が何を求めているかを比較表示
           if (foundTarget) {
-            status.innerText = `🎉 発見！ (${currentSearchWord})`;
+            status.innerText = `🎉 発見！ 検出中: ${detectedNames.join(', ')} (探す物: ${currentSearchWord})`;
             status.style.color = "#00ff00";
 
             const now = Date.now();
@@ -242,11 +244,13 @@
             }
           } else {
             if (detectedNames.length > 0) {
+              // 指定した名前でなくても、AIが何を見つけているかをすべて表示する
               status.innerText = `👀 検出中: ${detectedNames.join(', ')} (探している物: ${currentSearchWord})`;
+              status.style.color = "#ccc";
             } else {
               status.innerText = `🔍 探索中... (探している物: ${currentSearchWord})`;
+              status.style.color = "#aaa";
             }
-            status.style.color = "#aaa";
           }
         } catch (e) {
           console.error("推論エラー:", e);
