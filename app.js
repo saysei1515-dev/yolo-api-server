@@ -7,7 +7,7 @@ let webcamRunning = false;
 let trainCameraRunning = false;
 let vision = undefined;
 
-// カスタムAI学習用（起動時は読み込まず、登録モードを開いたときに安全に読み込みます）
+// カスタムAI学習用
 let classifier = undefined;
 let mobilenetModel = undefined;
 let isCustomAIReady = false;
@@ -26,15 +26,15 @@ let capturedImages = [];
 let lastCaptureTime = 0;
 let lastVideoTime = -1;
 let currentSearchWord = "cup";
-let searchModeType = "standard"; // "standard" または "custom"
+let searchModeType = "standard";
 
-// 登録用データの管理（マルチアングルガイド対応）
+// 登録用データの管理
 let trainingData = {
-  front: [],  // 正面
-  angle: [],  // 斜め
-  far: []     // 遠く/離れ
+  front: [],
+  angle: [],
+  far: []
 };
-let currentStep = 1; // 1:正面, 2:斜め, 3:遠く
+let currentStep = 1;
 
 const modelPaths = {
   lite0: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite",
@@ -62,14 +62,14 @@ window.switchView = function(viewName) {
     tabSearch.classList.remove("active");
     tabTrain.classList.add("active");
 
-    // 登録タブを開いたタイミングで、重いカスタムAIを裏側で安全に遅延ロードする
+    // 登録タブを開いたときにカスタムAIを初期化
     if (!isCustomAIReady) {
-      loadCustomAILazy();
+      loadCustomAI();
     }
   }
 };
 
-// 1. 起動時は軽量な「標準AI（MediaPipe）」だけを高速ロードして即座にスタンバイ
+// 1. 標準AI（MediaPipe）の初期化
 async function initializeStandardAI() {
   startButton.disabled = true;
   status.innerText = "ステータス: 標準AIモデルをロード中...";
@@ -102,22 +102,24 @@ async function initializeStandardAI() {
   }
 }
 
-// 2. 登録モード用：TensorFlow.js と MobileNet を必要なときだけ非同期で読み込む（フリーズ防止）
-async function loadCustomAILazy() {
+// 2. カスタムAI（HTML側で読み込んだグローバル変数を利用）の初期化
+async function loadCustomAI() {
   const trainStatus = document.getElementById("trainStatus");
   trainStatus.innerText = "ステータス: カスタム学習エンジンを準備中...";
   trainStatus.style.color = "#ffc107";
 
   try {
-    const knnModule = await import("https://cdn.jsdelivr.net/npm/@tensorflow-models/knn-classifier@1.2.2/dist/knn-classifier.min.js");
-    const mobilenetModule = await import("https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.0/dist/mobilenet.min.js");
-    
-    classifier = knnModule.create();
-    mobilenetModel = await mobilenetModule.load();
-    isCustomAIReady = true;
+    // windowオブジェクトに展開されたモデルを安全にロード
+    if (typeof knnClassifier !== 'undefined' && typeof mobilenet !== 'undefined') {
+      classifier = knnClassifier.create();
+      mobilenetModel = await mobilenet.load();
+      isCustomAIReady = true;
 
-    trainStatus.innerText = "ステータス: 準備完了（マルチアングル撮影できます）";
-    trainStatus.style.color = "#00ff00";
+      trainStatus.innerText = "ステータス: 準備完了（マルチアングル撮影できます）";
+      trainStatus.style.color = "#00ff00";
+    } else {
+      throw new Error("ライブラリが読み込まれていません");
+    }
   } catch (err) {
     console.error("カスタムAIロードエラー:", err);
     trainStatus.innerText = "エラー: カスタムAIのロードに失敗しました";
@@ -155,7 +157,6 @@ window.updateTarget = function() {
   }
   currentSearchWord = inputVal;
 
-  // 登録したカスタムアイテムの名前と一致するかチェック
   if (isTrained && currentSearchWord === customTargetName.toLowerCase()) {
     searchModeType = "custom";
     status.innerText = `🎯 カスタムAIモード: 自作アイテム「${customTargetName}」を探します！`;
@@ -240,15 +241,12 @@ function stopTrainCamera() {
   trainVideo.srcObject = null;
 }
 
-// 角度別の撮影 ＆ KNNモデルへの特徴量学習
 window.captureAngleImage = async function() {
   if (!trainCameraRunning || !isCustomAIReady) return;
 
-  // 1. 撮影中の映像から特徴量を抽出してKNN分類器に学習させる
   const activation = mobilenetModel.infer(trainVideo, true);
-  classifier.addExample(activation, 0); // クラス0として学習
+  classifier.addExample(activation, 0);
 
-  // 2. サムネイル表示用の画像生成
   const tempCanvas = document.createElement('canvas');
   tempCanvas.width = 160;
   tempCanvas.height = 120;
@@ -331,7 +329,6 @@ window.trainAIModel = function() {
   }, 1000);
 };
 
-// ── メインのリアルタイム推論ループ ──
 async function predictWebcam() {
   if (!webcamRunning) return;
 
@@ -349,7 +346,6 @@ async function predictWebcam() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       let foundTarget = false;
 
-      // カスタムAIモードの判定ロジック
       if (searchModeType === "custom" && isTrained && classifier && classifier.getNumClasses() > 0) {
         const activation = mobilenetModel.infer(video, true);
         const result = await classifier.predictClass(activation);
@@ -358,7 +354,6 @@ async function predictWebcam() {
           foundTarget = true;
           const conf = Math.round(result.confidences[0] * 100);
 
-          // 検出枠の描画
           ctx.strokeStyle = "#00ff00";
           ctx.lineWidth = 4;
           ctx.strokeRect(20, 20, canvas.width - 40, canvas.height - 40);
@@ -375,7 +370,6 @@ async function predictWebcam() {
         }
 
       } else {
-        // 標準AIモードの判定ロジック
         const startTimeMs = performance.now();
         const detections = objectDetector.detectForVideo(video, startTimeMs);
 
