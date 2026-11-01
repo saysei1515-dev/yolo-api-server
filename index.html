@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+ <!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
@@ -215,7 +215,8 @@
               if (categoryName.includes(currentSearchWord)) {
                 foundTarget = true;
 
-                const bbox = detection.bounding_box;
+                // 【修正】 bounding_box ではなく正しい boundingBox を使用
+                const bbox = detection.boundingBox;
                 ctx.strokeStyle = "#00ff00";
                 ctx.lineWidth = 4;
                 ctx.strokeRect(bbox.originX, bbox.originY, bbox.width, bbox.height);
