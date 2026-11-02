@@ -30,7 +30,7 @@ let conn = null;
 
 // 撮影データ一時保存用配列
 let capturedObjects = [];
-let capturedBackgrounds = []; // 背景は誤検知防止のネガティブチェック用に保持
+let capturedBackgrounds = [];
 
 const modelPaths = {
   lite0: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite",
@@ -401,7 +401,7 @@ function calculateCosineSimilarity(vecA, vecB) {
   return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
-// リアルタイム推論ループ（高精度類似度マッチング ＆ 緑枠描画）
+// リアルタイム推論ループ
 async function predictWebcam() {
   if (!webcamRunning) return;
 
@@ -421,44 +421,64 @@ async function predictWebcam() {
       let foundTarget = false;
 
       if (useCustomModel && registeredEmbeddings.length > 0 && mobilenetModel) {
-        // カメラ映像から特徴量を抽出
-        const currentEmbedding = tf.tidy(() => {
-          const tensor = tf.browser.fromPixels(video).toFloat().expandDims(0);
-          const embedding = mobilenetModel.infer(tensor, true);
-          return Array.from(embedding.dataSync());
-        });
+        
+        // 🛡️【安全フィルター】真っ暗（レンズを塞いだ状態など）の誤作動を防止
+        const checkCanvas = document.createElement("canvas");
+        checkCanvas.width = 50;
+        checkCanvas.height = 50;
+        const checkCtx = checkCanvas.getContext("2d");
+        checkCtx.drawImage(video, 0, 0, 50, 50);
+        const imgData = checkCtx.getImageData(0, 0, 50, 50).data;
+        
+        let totalBrightness = 0;
+        for (let i = 0; i < imgData.length; i += 4) {
+          totalBrightness += (imgData[i] * 0.299 + imgData[i+1] * 0.587 + imgData[i+2] * 0.114);
+        }
+        const avgBrightness = totalBrightness / (imgData.length / 4);
 
-        // 登録されたすべてのサンプルとの類似度を計算し、最大値を取得
-        let maxSimilarity = 0;
-        for (let regEmb of registeredEmbeddings) {
-          const similarity = calculateCosineSimilarity(currentEmbedding, regEmb);
-          if (similarity > maxSimilarity) {
-            maxSimilarity = similarity;
+        if (avgBrightness > 25) {
+          
+          // カメラ映像から特徴量ベクトルを抽出
+          const currentEmbedding = tf.tidy(() => {
+            const tensor = tf.browser.fromPixels(video).toFloat().expandDims(0);
+            const embedding = mobilenetModel.infer(tensor, true);
+            return Array.from(embedding.dataSync());
+          });
+
+          // 登録された物体アングルとの類似度を計算し、最大値を取得
+          let maxSimilarity = 0;
+          for (let regEmb of registeredEmbeddings) {
+            const similarity = calculateCosineSimilarity(currentEmbedding, regEmb);
+            if (similarity > maxSimilarity) {
+              maxSimilarity = similarity;
+            }
+          }
+
+          // 🎯 物体との類似度が閾値（0.72以上）を超えたら発見！
+          if (maxSimilarity >= 0.72) {
+            foundTarget = true;
+
+            // 🟢 発見した物体だけを緑の枠でシンプルに囲む
+            ctx.strokeStyle = "#00ff00";
+            ctx.lineWidth = 5;
+            ctx.strokeRect(40, 40, canvas.width - 80, canvas.height - 80);
+
+            // 上部にすっきりとしたラベルを表示
+            ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+            ctx.fillRect(40, 40, canvas.width - 80, 35);
+
+            ctx.fillStyle = "#00ff00";
+            ctx.font = "bold 16px sans-serif";
+            ctx.fillText(`✨ ${activeCustomName} (${Math.round(maxSimilarity * 100)}%)`, 50, 63);
+
+            const now = Date.now();
+            if (now - lastSaveTime > 3000) {
+              saveFoundCustomImage();
+              lastSaveTime = now;
+            }
           }
         }
 
-        // 類似度が閾値（例: 0.75以上）を超えたら高精度に検知とみなす
-        if (maxSimilarity >= 0.75) {
-          foundTarget = true;
-
-          // 🟢 鮮やかな緑の枠で物体を強力に囲む
-          ctx.strokeStyle = "#00ff00";
-          ctx.lineWidth = 5;
-          ctx.strokeRect(30, 30, canvas.width - 60, canvas.height - 60);
-
-          ctx.fillStyle = "rgba(0, 255, 0, 0.8)";
-          ctx.fillRect(30, 30, canvas.width - 60, 40);
-
-          ctx.fillStyle = "#000000";
-          ctx.font = "bold 18px sans-serif";
-          ctx.fillText(`✨ 発見: ${activeCustomName} (${Math.round(maxSimilarity * 100)}%)`, 40, 57);
-
-          const now = Date.now();
-          if (now - lastSaveTime > 3000) {
-            saveFoundCustomImage();
-            lastSaveTime = now;
-          }
-        }
       } else if (objectDetector) {
         const detections = objectDetector.detectForVideo(video, performance.now());
         if (detections && detections.detections) {
@@ -477,7 +497,6 @@ async function predictWebcam() {
               const width = bbox.width * scaleX;
               const height = bbox.height * scaleY;
 
-              // 🟢 標準モデルでの検知時も緑枠で囲む
               ctx.strokeStyle = "#00ff00";
               ctx.lineWidth = 4;
               ctx.strokeRect(x, y, width, height);
