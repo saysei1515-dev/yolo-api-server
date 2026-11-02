@@ -1,46 +1,49 @@
-/* 全体のレイアウトとフォント */
+/* 全体のレイアウトとリセット */
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  text-align: center;
-  margin: 0;
-  padding: 15px;
-  background: #121212;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background-color: #121212;
   color: #e0e0e0;
-}
-
-/* アプリ全体のコンテナボックス */
-.app-container {
-  max-width: 500px;
-  margin: 0 auto;
-  background: #1e1e1e;
-  padding: 20px;
-  border-radius: 12px;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+  margin: 0;
+  padding: 10px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
   box-sizing: border-box;
 }
 
-/* 見出し */
+.app-container {
+  width: 100%;
+  max-width: 480px;
+  background: #1e1e1e;
+  padding: 15px;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  box-sizing: border-box;
+}
+
 h1 {
-  font-size: 22px;
+  font-size: 1.25rem;
+  text-align: center;
+  margin-top: 0;
   margin-bottom: 15px;
   color: #ffffff;
 }
 
-/* タブ切り替えメニューのスタイル */
+/* 🔗 タブメニュー */
 .tab-menu {
   display: flex;
+  gap: 5px;
   margin-bottom: 15px;
-  border-radius: 6px;
-  overflow: hidden;
-  border: 1px solid #444;
 }
 
 .tab-btn {
   flex: 1;
   padding: 10px;
-  background: #2a2a2a;
+  background: #2c2c2c;
   color: #aaa;
   border: none;
+  border-radius: 6px;
   font-weight: bold;
   cursor: pointer;
   transition: background 0.2s, color 0.2s;
@@ -59,121 +62,131 @@ h1 {
   display: block;
 }
 
-/* 各コントロールグループ */
+/* 制御グループ・フォーム要素 */
 .control-group {
-  margin-bottom: 15px;
-  text-align: left;
-  background: #2a2a2a;
-  padding: 12px;
+  margin-bottom: 12px;
+  background: #252525;
+  padding: 10px;
   border-radius: 8px;
   border: 1px solid #333;
 }
 
 .control-group label {
   display: block;
-  font-weight: bold;
+  font-size: 12px;
   margin-bottom: 5px;
-  font-size: 14px;
   color: #ccc;
+  font-weight: bold;
 }
 
-/* 入力欄、セレクトボックス、ボタン共通 */
 input[type="text"], select {
   width: 100%;
-  padding: 10px;
-  font-size: 16px;
-  background: #121212;
-  color: #fff;
+  padding: 8px 10px;
+  background: #181818;
   border: 1px solid #444;
-  border-radius: 6px;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 14px;
   box-sizing: border-box;
-  margin-top: 5px;
 }
 
 input[type="text"]:focus, select:focus {
-  outline: none;
   border-color: #007bff;
+  outline: none;
 }
 
-/* ボタン類 */
-button {
-  cursor: pointer;
-  font-weight: bold;
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  transition: opacity 0.2s;
-}
-
-button:hover {
-  opacity: 0.9;
-}
-
-.primary-btn {
-  width: 100%;
-  padding: 12px;
-  background: #28a745;
-  font-size: 16px;
-}
-
-.danger-btn {
-  width: 100%;
-  padding: 12px;
-  background: #dc3545;
-  font-size: 16px;
-}
-
-/* カメラ映像表示エリア */
+/* カメラコンテナ */
 .camera-container {
   position: relative;
   width: 100%;
   background: #000;
   border-radius: 8px;
   overflow: hidden;
-  margin-top: 15px;
-  aspect-ratio: 4 / 3;
+  margin-bottom: 10px;
 }
 
-video, canvas {
+video {
   width: 100%;
-  height: 100%;
-  object-fit: cover;
   display: block;
 }
 
-canvas {
-  position: absolute;
-  left: 0;
-  top: 0;
-  pointer-events: none;
+/* ボタン関係 */
+.button-group {
+  display: flex;
+  gap: 8px;
 }
 
-/* ステータス表示ボックス */
-.status-box {
-  margin-top: 15px;
-  padding: 10px;
-  background: #2a2a2a;
+button {
+  cursor: pointer;
+}
+
+.primary-btn {
+  width: 100%;
+  padding: 12px;
+  background: #28a745;
+  color: #fff;
+  border: none;
   border-radius: 6px;
   font-weight: bold;
-  font-size: 14px;
-  color: #ffc107;
-  border: 1px solid #444;
+  font-size: 15px;
 }
 
-/* 発見・登録アイテムの履歴ギャラリー */
+.primary-btn:disabled {
+  background: #555;
+  cursor: not-allowed;
+}
+
+.danger-btn {
+  width: 100%;
+  padding: 12px;
+  background: #dc3545;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-weight: bold;
+  font-size: 15px;
+}
+
+/* ステータス・ギャラリー */
+.status-box {
+  margin-top: 10px;
+  padding: 10px;
+  background: #252525;
+  border-radius: 6px;
+  font-size: 13px;
+  text-align: center;
+  color: #ffc107;
+  border: 1px solid #333;
+}
+
 .gallery {
   display: flex;
   gap: 10px;
   overflow-x: auto;
   padding: 5px 0;
   min-height: 90px;
+  background: #181818;
+  border-radius: 6px;
+  border: 1px dashed #333;
 }
 
-.gallery::-webkit-scrollbar {
-  height: 6px;
+/* ✂️ 手動クロップモード用スタイル */
+#crop-section {
+  background: #252525;
+  padding: 12px;
+  border-radius: 8px;
+  border: 2px dashed #ffc107;
+  margin-top: 15px;
+  box-sizing: border-box;
+  text-align: center;
 }
 
-.gallery::-webkit-scrollbar-thumb {
-  background: #444;
-  border-radius: 3px;
+#cropCanvas {
+  max-width: 100%;
+  height: auto;
+  border: 2px solid #ff0055;
+  cursor: crosshair;
+  touch-action: none;
+  display: inline-block;
+  border-radius: 4px;
 }
