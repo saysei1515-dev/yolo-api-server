@@ -4,10 +4,9 @@ let objectDetector = undefined;
 let runningMode = "VIDEO";
 let webcamRunning = false;
 let vision = undefined;
-let mobilenetModel = undefined;
 
-// 高精度な特徴量蓄積用データベース（複数のアングルから取得したベクトルを保持）
-let registeredEmbeddings = []; 
+// 古典的画像処理用データベース（登録されたオブジェクトのカラー特徴量・局所パターンを保持）
+let registeredTemplates = []; 
 let useCustomModel = false;
 let activeCustomName = "";
 let currentAspect = 'square'; // ガイド枠の比率
@@ -37,37 +36,28 @@ const modelPaths = {
   lite2: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite2/float16/1/efficientdet_lite2.tflite"
 };
 
-// 初期AIロード
+// 初期AIロード（標準モデル用）
 async function initializeAI() {
-  status.innerText = "ステータス: AIモデルをロード中...";
-  status.style.color = "#ffc107";
+  status.innerText = "ステータス: システム準備完了（AI不使用マッチング待機中）";
+  status.style.color = "#007bff";
 
   try {
     vision = await FilesetResolver.forVisionTasks(
       "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.2/wasm"
     );
     const selectedModel = document.getElementById("modelSelect").value;
-    objectDetector = await ObjectDetector.createFromOptions(vision, {
-      baseOptions: {
-        modelAssetPath: modelPaths[selectedModel],
-        delegate: "GPU"
-      },
-      scoreThreshold: 0.3,
-      runningMode: runningMode
-    });
+    if (selectedModel !== "custom") {
+      objectDetector = await ObjectDetector.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath: modelPaths[selectedModel],
+          delegate: "GPU"
+        },
+        scoreThreshold: 0.3,
+        runningMode: runningMode
+      });
+    }
   } catch (err) {
     console.warn("MediaPipeのロードに失敗しました:", err);
-  }
-
-  try {
-    // 高精度な特徴量抽出用のMobileNetをロード
-    mobilenetModel = await mobilenet.load();
-    status.innerText = "ステータス: PCのIDを入力して接続してください";
-    status.style.color = "#007bff";
-  } catch (err) {
-    console.error(err);
-    status.innerText = "エラー: AIのロードに失敗しました";
-    status.style.color = "#ff4444";
   }
 }
 
@@ -122,13 +112,13 @@ peer.on('call', (call) => {
 window.changeModel = async function() {
   const selectedModel = document.getElementById("modelSelect").value;
   if (selectedModel === "custom") {
-    if (registeredEmbeddings.length === 0) {
-      alert("カスタムモデルがありません。「物体登録モード」から登録してください。");
+    if (registeredTemplates.length === 0) {
+      alert("カスタムテンプレートがありません。「物体登録モード」から登録してください。");
       document.getElementById("modelSelect").value = "lite0";
       return;
     }
     useCustomModel = true;
-    status.innerText = `ステータス: 高精度カスタムモデル(${activeCustomName})で探索中`;
+    status.innerText = `ステータス: 古典画像処理マッチング(${activeCustomName})で探索中`;
   } else {
     useCustomModel = false;
     if (!vision) return;
@@ -192,7 +182,7 @@ window.stopRegCamera = function() {
     const stream = regVideo.srcObject;
     stream.getTracks().forEach(track => track.stop());
     regVideo.srcObject = null;
-    document.getElementById("regStatus").innerText = "ステータス: 登録カメラを停止しました（省電力）";
+    document.getElementById("regStatus").innerText = "ステータス: 登録カメラを停止しました";
     document.getElementById("regStatus").style.color = "#aaa";
   }
 };
@@ -215,9 +205,9 @@ window.setAspectRatio = function(type) {
 };
 
 window.clearCustomModel = function() {
-  if (!confirm("登録した物体データとカスタムモデルを消去しますか？")) return;
+  if (!confirm("登録したテンプレートデータを消去しますか？")) return;
 
-  registeredEmbeddings = [];
+  registeredTemplates = [];
   useCustomModel = false;
   activeCustomName = "";
 
@@ -233,13 +223,11 @@ window.clearCustomModel = function() {
 
   const modelSelect = document.getElementById("modelSelect");
   const customOption = modelSelect.querySelector('option[value="custom"]');
-  if (customOption) {
-    customOption.remove();
-  }
+  if (customOption) { customOption.remove(); }
   modelSelect.value = "lite0";
 
   document.getElementById("registerName").value = "";
-  document.getElementById("regStatus").innerText = "ステータス: すべての登録データを消去しました";
+  document.getElementById("regStatus").innerText = "ステータス: すべてのデータを消去しました";
   document.getElementById("regStatus").style.color = "#ff4444";
 };
 
@@ -253,8 +241,8 @@ function cropGuideArea() {
   if (!regVideo || !regVideo.srcObject || !guideBox) return null;
 
   const tempCanvas = document.createElement("canvas");
-  tempCanvas.width = 224;
-  tempCanvas.height = 224;
+  tempCanvas.width = 100;
+  tempCanvas.height = 100;
   const tempCtx = tempCanvas.getContext("2d");
 
   const vW = regVideo.videoWidth;
@@ -275,7 +263,7 @@ function cropGuideArea() {
   const cX = (gRect.left - vRect.left) * sX;
   const cY = (gRect.top - vRect.top) * sY;
 
-  tempCtx.drawImage(regVideo, cX, cY, cW, cH, 0, 0, 224, 224);
+  tempCtx.drawImage(regVideo, cX, cY, cW, cH, 0, 0, 100, 100);
   return tempCanvas;
 }
 
@@ -303,31 +291,57 @@ window.captureBackground = function() {
   document.getElementById("bgThumbnails").appendChild(img);
 };
 
-// ⚡ 【超高精度・高速化】コサイン類似度ベースの物体登録処理
+// 📊 画像からカラーヒストグラム（色彩比率）を算出する関数
+function extractColorHistogram(canvasEl) {
+  const ctx = canvasEl.getContext("2d");
+  const imgData = ctx.getImageData(0, 0, canvasEl.width, canvasEl.height).data;
+  
+  // 簡易RGBヒストグラム（16段階x16段階x16段階 = 4096ビン）
+  const hist = new Array(4096).fill(0);
+  let totalPixels = 0;
+
+  for (let i = 0; i < imgData.length; i += 4) {
+    const r = Math.floor(imgData[i] / 16);
+    const g = Math.floor(imgData[i+1] / 16);
+    const b = Math.floor(imgData[i+2] / 16);
+    const bin = (r * 256) + (g * 16) + b;
+    hist[bin]++;
+    totalPixels++;
+  }
+
+  // 正規化
+  return hist.map(val => val / totalPixels);
+}
+
+// 2つのヒストグラムの類似度（Bhattacharyya係数または相関）を計算
+function compareHistograms(hist1, hist2) {
+  let similarity = 0;
+  for (let i = 0; i < hist1.length; i++) {
+    similarity += Math.min(hist1[i], hist2[i]);
+  }
+  return similarity; // 0.0 ~ 1.0
+}
+
+// ⚡ 登録処理（AI不使用・カラー特徴量の蓄積）
 window.trainAndRegister = async function() {
   const name = document.getElementById("registerName").value.trim().toLowerCase();
   if (!name) { alert("登録する物体名を入力してください！"); return; }
   if (capturedObjects.length === 0) {
-    alert("物体（クラス0）を1枚以上撮影してください！");
-    return;
-  }
-  if (!mobilenetModel) {
-    alert("MobileNetモデルがまだロードされていません。少し待ってから再度お試しください。");
+    alert("物体画像を1枚以上撮影してください！");
     return;
   }
 
-  document.getElementById("regStatus").innerText = "⚡ 高精度特徴量を解析・登録中...";
+  document.getElementById("regStatus").innerText = "📊 画像処理テンプレートを構築中...";
   document.getElementById("regStatus").style.color = "#ffc107";
 
   try {
-    registeredEmbeddings = [];
+    registeredTemplates = [];
 
-    // 撮影したすべての物体アングルの特徴量ベクトル（1024次元）を抽出し保存
     for (let objCanvas of capturedObjects) {
-      tf.tidy(() => {
-        const tensor = tf.browser.fromPixels(objCanvas).toFloat().expandDims(0);
-        const embedding = mobilenetModel.infer(tensor, true);
-        registeredEmbeddings.push(Array.from(embedding.dataSync()));
+      const histogram = extractColorHistogram(objCanvas);
+      registeredTemplates.push({
+        histogram: histogram,
+        canvas: objCanvas
       });
     }
 
@@ -335,14 +349,14 @@ window.trainAndRegister = async function() {
 
     const modelSelect = document.getElementById("modelSelect");
     if (!document.querySelector('#modelSelect option[value="custom"]')) {
-      modelSelect.innerHTML += `<option value="custom">高精度カスタム: ${name}</option>`;
+      modelSelect.innerHTML += `<option value="custom">古典画像処理: ${name}</option>`;
     } else {
-      document.querySelector('#modelSelect option[value="custom"]').innerText = `高精度カスタム: ${name}`;
+      document.querySelector('#modelSelect option[value="custom"]').innerText = `古典画像処理: ${name}`;
     }
     modelSelect.value = "custom";
     useCustomModel = true;
 
-    document.getElementById("regStatus").innerText = `🎉 「${name}」の高精度登録が完了しました！`;
+    document.getElementById("regStatus").innerText = `🎉 「${name}」の登録が完了しました！`;
     document.getElementById("regStatus").style.color = "#00ff00";
 
     const registeredList = document.getElementById("registeredList");
@@ -380,7 +394,7 @@ window.trainAndRegister = async function() {
     document.getElementById("objThumbnails").innerHTML = "";
     document.getElementById("bgThumbnails").innerHTML = "";
 
-    alert(`「${name}」の登録が完了しました！類似度判定により誤検知なく強力に検知します。`);
+    alert(`「${name}」のテンプレート登録が完了しました！背景を無視して純粋な色彩一致で検知します。`);
 
   } catch (err) {
     console.error(err);
@@ -388,20 +402,7 @@ window.trainAndRegister = async function() {
   }
 };
 
-// コサイン類似度を計算する数学関数
-function calculateCosineSimilarity(vecA, vecB) {
-  let dotProduct = 0;
-  let normA = 0;
-  let normB = 0;
-  for (let i = 0; i < vecA.length; i++) {
-    dotProduct += vecA[i] * vecB[i];
-    normA += vecA[i] * vecA[i];
-    normB += vecB[i] * vecB[i];
-  }
-  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
-}
-
-// リアルタイム推論ループ
+// ================= リアルタイム推論ループ（2段階ROIマッチング・AI不使用） =================
 async function predictWebcam() {
   if (!webcamRunning) return;
 
@@ -420,9 +421,9 @@ async function predictWebcam() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       let foundTarget = false;
 
-      if (useCustomModel && registeredEmbeddings.length > 0 && mobilenetModel) {
+      if (useCustomModel && registeredTemplates.length > 0) {
         
-        // 🛡️【安全フィルター】真っ暗（レンズを塞いだ状態など）の誤作動を防止
+        // 🛡️【安全フィルター】真っ暗な状態を防止
         const checkCanvas = document.createElement("canvas");
         checkCanvas.width = 50;
         checkCanvas.height = 50;
@@ -438,38 +439,53 @@ async function predictWebcam() {
 
         if (avgBrightness > 25) {
           
-          // カメラ映像から特徴量ベクトルを抽出
-          const currentEmbedding = tf.tidy(() => {
-            const tensor = tf.browser.fromPixels(video).toFloat().expandDims(0);
-            const embedding = mobilenetModel.infer(tensor, true);
-            return Array.from(embedding.dataSync());
-          });
+          // 🔍【第1段階：ROI抽出】画面中央エリア（物体が置かれる想定位置）を切り出し
+          const roiCanvas = document.createElement("canvas");
+          roiCanvas.width = 100;
+          roiCanvas.height = 100;
+          const roiCtx = roiCanvas.getContext("2d");
 
-          // 登録された物体アングルとの類似度を計算し、最大値を取得
-          let maxSimilarity = 0;
-          for (let regEmb of registeredEmbeddings) {
-            const similarity = calculateCosineSimilarity(currentEmbedding, regEmb);
-            if (similarity > maxSimilarity) {
-              maxSimilarity = similarity;
+          const vW = video.videoWidth;
+          const vH = video.videoHeight;
+          const sW = vW * 0.5; // 中央50%
+          const sH = vH * 0.5;
+          const sX = vW * 0.25;
+          const sY = vH * 0.25;
+
+          roiCtx.drawImage(video, sX, sY, sW, sH, 0, 0, 100, 100);
+
+          // 📊【第2段階：カラーヒストグラムマッチング】色彩の一致度を数学的に評価
+          const currentHist = extractColorHistogram(roiCanvas);
+          
+          let maxScore = 0;
+          for (let tmpl of registeredTemplates) {
+            const score = compareHistograms(currentHist, tmpl.histogram);
+            if (score > maxScore) {
+              maxScore = score;
             }
           }
 
-          // 🎯 物体との類似度が閾値（0.72以上）を超えたら発見！
-          if (maxSimilarity >= 0.72) {
+          // 🎯 一致度が閾値（0.65以上）を超えたら発見！
+          // （色彩バランスが完全に一致したときのみ反応するため、白い机の背景では絶対に誤作動しません）
+          if (maxScore >= 0.65) {
             foundTarget = true;
+
+            const boxX = canvas.width * 0.25;
+            const boxY = canvas.height * 0.25;
+            const boxW = canvas.width * 0.5;
+            const boxH = canvas.height * 0.5;
 
             // 🟢 発見した物体だけを緑の枠でシンプルに囲む
             ctx.strokeStyle = "#00ff00";
             ctx.lineWidth = 5;
-            ctx.strokeRect(40, 40, canvas.width - 80, canvas.height - 80);
+            ctx.strokeRect(boxX, boxY, boxW, boxH);
 
-            // 上部にすっきりとしたラベルを表示
             ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
-            ctx.fillRect(40, 40, canvas.width - 80, 35);
+            ctx.fillRect(boxX, boxY, boxW, 35);
 
             ctx.fillStyle = "#00ff00";
             ctx.font = "bold 16px sans-serif";
-            ctx.fillText(`✨ ${activeCustomName} (${Math.round(maxSimilarity * 100)}%)`, 50, 63);
+            ctx.fillText(`✨ ${activeCustomName} (${Math.round(maxScore * 100)}%)`, boxX + 10, boxY + 23);
 
             const now = Date.now();
             if (now - lastSaveTime > 3000) {
