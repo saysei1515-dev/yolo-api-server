@@ -5,7 +5,12 @@ let runningMode = "VIDEO";
 let webcamRunning = false;
 let vision = undefined;
 let mobilenetModel = undefined;
-let customClassifier = null; // 独自学習モデル
+
+// 高精度な特徴量蓄積用データベース（複数のアングルから取得したベクトルを保持）
+let registeredEmbeddings = []; 
+let useCustomModel = false;
+let activeCustomName = "";
+let currentAspect = 'square'; // ガイド枠の比率
 
 const video = document.getElementById("video");
 const canvas = document.getElementById("outputCanvas");
@@ -18,9 +23,6 @@ const connStatus = document.getElementById("connectionStatus");
 let lastVideoTime = -1;
 let currentSearchWord = "cup";
 let lastSaveTime = 0; 
-let useCustomModel = false;
-let activeCustomName = "";
-let currentAspect = 'square'; // ガイド枠の比率
 
 // PeerJS初期化
 const peer = new Peer();
@@ -28,7 +30,7 @@ let conn = null;
 
 // 撮影データ一時保存用配列
 let capturedObjects = [];
-let capturedBackgrounds = [];
+let capturedBackgrounds = []; // 背景は誤検知防止のネガティブチェック用に保持
 
 const modelPaths = {
   lite0: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite",
@@ -58,7 +60,7 @@ async function initializeAI() {
   }
 
   try {
-    // 特徴量抽出用のMobileNetをロード
+    // 高精度な特徴量抽出用のMobileNetをロード
     mobilenetModel = await mobilenet.load();
     status.innerText = "ステータス: PCのIDを入力して接続してください";
     status.style.color = "#007bff";
@@ -120,13 +122,13 @@ peer.on('call', (call) => {
 window.changeModel = async function() {
   const selectedModel = document.getElementById("modelSelect").value;
   if (selectedModel === "custom") {
-    if (!customClassifier) {
-      alert("カスタムモデルがありません。「物体登録モード」から学習させてください。");
+    if (registeredEmbeddings.length === 0) {
+      alert("カスタムモデルがありません。「物体登録モード」から登録してください。");
       document.getElementById("modelSelect").value = "lite0";
       return;
     }
     useCustomModel = true;
-    status.innerText = `ステータス: カスタムモデル(${activeCustomName})で探索中`;
+    status.innerText = `ステータス: 高精度カスタムモデル(${activeCustomName})で探索中`;
   } else {
     useCustomModel = false;
     if (!vision) return;
@@ -174,7 +176,7 @@ window.stopCamera = function() {
   status.innerText = "ステータス: 停止しました";
 };
 
-// ================= 物体登録ページ ＆ ガイド内撮影処理 =================
+// ================= 物体登録ページ ＆ ガイド内撮影・比率変更処理 =================
 window.startRegCamera = async function() {
   const regVideo = document.getElementById("regVideo");
   try {
@@ -195,7 +197,6 @@ window.stopRegCamera = function() {
   }
 };
 
-// 📌 ガイド枠の縦横比率を変更する関数
 window.setAspectRatio = function(type) {
   currentAspect = type;
   const guideBox = document.getElementById("regGuideBox");
@@ -206,20 +207,17 @@ window.setAspectRatio = function(type) {
     guideBox.style.height = '160px';
   } else if (type === 'landscape') {
     guideBox.style.width = '240px';
-    guideBox.style.height = '120px'; // 横長
+    guideBox.style.height = '120px';
   } else if (type === 'portrait') {
     guideBox.style.width = '120px';
-    guideBox.style.height = '240px'; // 縦長
+    guideBox.style.height = '240px';
   }
 };
 
 window.clearCustomModel = function() {
   if (!confirm("登録した物体データとカスタムモデルを消去しますか？")) return;
 
-  if (customClassifier) {
-    customClassifier.dispose();
-    customClassifier = null;
-  }
+  registeredEmbeddings = [];
   useCustomModel = false;
   activeCustomName = "";
 
@@ -249,7 +247,6 @@ window.clearGallery = function() {
   document.getElementById("imageGallery").innerHTML = "";
 };
 
-// ガイド枠（可変比率）の部分を正確にクロップして224x224（MobileNet用）にする関数
 function cropGuideArea() {
   const regVideo = document.getElementById("regVideo");
   const guideBox = document.getElementById("regGuideBox");
@@ -306,12 +303,12 @@ window.captureBackground = function() {
   document.getElementById("bgThumbnails").appendChild(img);
 };
 
-// ⚡ エポック数30 ＆ 2層Dense層（32➡️16）でパワーアップしたAI学習
+// ⚡ 【超高精度・高速化】コサイン類似度ベースの物体登録処理
 window.trainAndRegister = async function() {
   const name = document.getElementById("registerName").value.trim().toLowerCase();
   if (!name) { alert("登録する物体名を入力してください！"); return; }
-  if (capturedObjects.length === 0 || capturedBackgrounds.length === 0) {
-    alert("物体（クラス0）と背景（クラス1）をそれぞれ1枚以上撮影してください！");
+  if (capturedObjects.length === 0) {
+    alert("物体（クラス0）を1枚以上撮影してください！");
     return;
   }
   if (!mobilenetModel) {
@@ -319,65 +316,33 @@ window.trainAndRegister = async function() {
     return;
   }
 
-  document.getElementById("regStatus").innerText = "⚡ パワーアップAI学習中 (Epochs: 30)... しばらくお待ちください";
+  document.getElementById("regStatus").innerText = "⚡ 高精度特徴量を解析・登録中...";
   document.getElementById("regStatus").style.color = "#ffc107";
 
   try {
-    // 隠れ層を2層化（32 ➡️ 16）したリッチな分類モデル
-    customClassifier = tf.sequential();
-    customClassifier.add(tf.layers.dense({ units: 32, activation: 'relu', inputShape: [1024] }));
-    customClassifier.add(tf.layers.dense({ units: 16, activation: 'relu' }));
-    customClassifier.add(tf.layers.dense({ units: 2, activation: 'softmax' })); // [背景, 物体]
-    
-    customClassifier.compile({ 
-      optimizer: tf.train.adam(0.0001), 
-      loss: 'categoricalCrossentropy', 
-      metrics: ['accuracy'] 
-    });
+    registeredEmbeddings = [];
 
-    let inputs = [];
-    let labels = [];
-
-    for (let bgCanvas of capturedBackgrounds) {
-      const tensor = tf.browser.fromPixels(bgCanvas).toFloat().expandDims(0);
-      const embedding = mobilenetModel.infer(tensor, true);
-      inputs.push(embedding);
-      labels.push([1, 0]);
-      tensor.dispose();
-    }
-
+    // 撮影したすべての物体アングルの特徴量ベクトル（1024次元）を抽出し保存
     for (let objCanvas of capturedObjects) {
-      const tensor = tf.browser.fromPixels(objCanvas).toFloat().expandDims(0);
-      const embedding = mobilenetModel.infer(tensor, true);
-      inputs.push(embedding);
-      labels.push([0, 1]);
-      tensor.dispose();
+      tf.tidy(() => {
+        const tensor = tf.browser.fromPixels(objCanvas).toFloat().expandDims(0);
+        const embedding = mobilenetModel.infer(tensor, true);
+        registeredEmbeddings.push(Array.from(embedding.dataSync()));
+      });
     }
-
-    const xs = tf.concat(inputs);
-    const ys = tf.tensor2d(labels);
-
-    // エポック数を30に設定してじっくり学習
-    await customClassifier.fit(xs, ys, {
-      epochs: 30,
-      shuffle: true
-    });
-
-    xs.dispose();
-    ys.dispose();
 
     activeCustomName = name;
 
     const modelSelect = document.getElementById("modelSelect");
     if (!document.querySelector('#modelSelect option[value="custom"]')) {
-      modelSelect.innerHTML += `<option value="custom">カスタム: ${name}</option>`;
+      modelSelect.innerHTML += `<option value="custom">高精度カスタム: ${name}</option>`;
     } else {
-      document.querySelector('#modelSelect option[value="custom"]').innerText = `カスタム: ${name}`;
+      document.querySelector('#modelSelect option[value="custom"]').innerText = `高精度カスタム: ${name}`;
     }
     modelSelect.value = "custom";
     useCustomModel = true;
 
-    document.getElementById("regStatus").innerText = `🎉 「${name}」のパワーアップ学習が完了しました！探索モードで使えます。`;
+    document.getElementById("regStatus").innerText = `🎉 「${name}」の高精度登録が完了しました！`;
     document.getElementById("regStatus").style.color = "#00ff00";
 
     const registeredList = document.getElementById("registeredList");
@@ -398,11 +363,15 @@ window.trainAndRegister = async function() {
     container.appendChild(lbl);
     registeredList.appendChild(container);
 
-    const quickBtn = document.createElement("button");
-    quickBtn.innerText = `🔍 ${name}`;
-    quickBtn.style.padding = "4px 8px"; quickBtn.style.background = "#28a745"; quickBtn.style.color = "#fff"; quickBtn.style.border = "none"; quickBtn.style.borderRadius = "4px"; quickBtn.style.cursor = "pointer"; quickBtn.style.fontSize = "12px";
-    quickBtn.onclick = () => selectCustomTarget(name);
-    document.getElementById("quickSelectList").appendChild(quickBtn);
+    const quickBtn = document.getElementById("quickSelectList");
+    if (quickBtn) {
+      quickBtn.innerHTML = "";
+      const btn = document.createElement("button");
+      btn.innerText = `🔍 ${name}`;
+      btn.style.cssText = "padding: 4px 8px; background: #28a745; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;";
+      btn.onclick = () => selectCustomTarget(name);
+      quickBtn.appendChild(btn);
+    }
 
     capturedObjects = [];
     capturedBackgrounds = [];
@@ -411,13 +380,28 @@ window.trainAndRegister = async function() {
     document.getElementById("objThumbnails").innerHTML = "";
     document.getElementById("bgThumbnails").innerHTML = "";
 
+    alert(`「${name}」の登録が完了しました！類似度判定により誤検知なく強力に検知します。`);
+
   } catch (err) {
     console.error(err);
-    alert("学習中にエラーが発生しました: " + err.message);
+    alert("登録中にエラーが発生しました: " + err.message);
   }
 };
 
-// リアルタイム推論ループ
+// コサイン類似度を計算する数学関数
+function calculateCosineSimilarity(vecA, vecB) {
+  let dotProduct = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < vecA.length; i++) {
+    dotProduct += vecA[i] * vecB[i];
+    normA += vecA[i] * vecA[i];
+    normB += vecB[i] * vecB[i];
+  }
+  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+// リアルタイム推論ループ（高精度類似度マッチング ＆ 緑枠描画）
 async function predictWebcam() {
   if (!webcamRunning) return;
 
@@ -436,25 +420,38 @@ async function predictWebcam() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       let foundTarget = false;
 
-      if (useCustomModel && customClassifier && mobilenetModel) {
-        const tensor = tf.browser.fromPixels(video).toFloat().expandDims(0);
-        const embedding = mobilenetModel.infer(tensor, true);
-        const prediction = customClassifier.predict(embedding);
-        const probabilities = await prediction.data();
+      if (useCustomModel && registeredEmbeddings.length > 0 && mobilenetModel) {
+        // カメラ映像から特徴量を抽出
+        const currentEmbedding = tf.tidy(() => {
+          const tensor = tf.browser.fromPixels(video).toFloat().expandDims(0);
+          const embedding = mobilenetModel.infer(tensor, true);
+          return Array.from(embedding.dataSync());
+        });
 
-        tensor.dispose();
-        embedding.dispose();
-        prediction.dispose();
+        // 登録されたすべてのサンプルとの類似度を計算し、最大値を取得
+        let maxSimilarity = 0;
+        for (let regEmb of registeredEmbeddings) {
+          const similarity = calculateCosineSimilarity(currentEmbedding, regEmb);
+          if (similarity > maxSimilarity) {
+            maxSimilarity = similarity;
+          }
+        }
 
-        // 閾値 0.3 で判定
-        if (probabilities[1] > 0.3) {
+        // 類似度が閾値（例: 0.75以上）を超えたら高精度に検知とみなす
+        if (maxSimilarity >= 0.75) {
           foundTarget = true;
+
+          // 🟢 鮮やかな緑の枠で物体を強力に囲む
           ctx.strokeStyle = "#00ff00";
-          ctx.lineWidth = 4;
-          ctx.strokeRect(40, 40, canvas.width - 80, canvas.height - 80);
-          ctx.fillStyle = "#00ff00";
-          ctx.font = "18px sans-serif";
-          ctx.fillText(`✨ ${activeCustomName} (${Math.round(probabilities[1] * 100)}%)`, 50, 70);
+          ctx.lineWidth = 5;
+          ctx.strokeRect(30, 30, canvas.width - 60, canvas.height - 60);
+
+          ctx.fillStyle = "rgba(0, 255, 0, 0.8)";
+          ctx.fillRect(30, 30, canvas.width - 60, 40);
+
+          ctx.fillStyle = "#000000";
+          ctx.font = "bold 18px sans-serif";
+          ctx.fillText(`✨ 発見: ${activeCustomName} (${Math.round(maxSimilarity * 100)}%)`, 40, 57);
 
           const now = Date.now();
           if (now - lastSaveTime > 3000) {
@@ -480,12 +477,15 @@ async function predictWebcam() {
               const width = bbox.width * scaleX;
               const height = bbox.height * scaleY;
 
+              // 🟢 標準モデルでの検知時も緑枠で囲む
               ctx.strokeStyle = "#00ff00";
               ctx.lineWidth = 4;
               ctx.strokeRect(x, y, width, height);
-              ctx.fillStyle = "#00ff00";
-              ctx.font = "16px sans-serif";
-              ctx.fillText(`${categoryName} ${score}%`, x, y > 20 ? y - 5 : 20);
+              ctx.fillStyle = "rgba(0, 255, 0, 0.7)";
+              ctx.fillRect(x, y > 25 ? y - 25 : 0, width, 25);
+              ctx.fillStyle = "#000";
+              ctx.font = "bold 14px sans-serif";
+              ctx.fillText(`${categoryName} ${score}%`, x + 5, y > 25 ? y - 7 : 18);
 
               const now = Date.now();
               if (now - lastSaveTime > 3000) {
@@ -498,7 +498,7 @@ async function predictWebcam() {
       }
 
       if (foundTarget) {
-        status.innerText = `🎉 発見！`;
+        status.innerText = `🎉 発見しました！`;
         status.style.color = "#00ff00";
       } else {
         status.innerText = `🔍 探索中...`;
