@@ -444,7 +444,6 @@ window.confirmCrop = function() {
     cutCanvas.height = 224;
     const cutCtx = cutCanvas.getContext('2d');
 
-    // 正確なスケール比率を適用してクロップ
     const scaleX = capturedImageBitmap.width / cropCanvas.width;
     const scaleY = capturedImageBitmap.height / cropCanvas.height;
 
@@ -586,7 +585,7 @@ function calculateCosineSimilarity(vecA, vecB) {
   return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
-// ================= リアルタイム推論ループ =================
+// ================= リアルタイム推論ループ（しきい値0.3設定） =================
 async function predictWebcam() {
   if (!webcamRunning) return;
 
@@ -658,8 +657,9 @@ async function predictWebcam() {
             }
           }
 
-          const threshold = 0.82;
-          if (maxObjSimilarity >= threshold && maxObjSimilarity > (maxBgSimilarity + 0.05)) {
+          // しきい値を0.3（30%）に変更
+          const threshold = 0.3;
+          if (maxObjSimilarity >= threshold && maxObjSimilarity > maxBgSimilarity) {
             foundTarget = true;
 
             const boxX = canvas.width * 0.2;
