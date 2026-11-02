@@ -6,8 +6,9 @@ let webcamRunning = false;
 let vision = undefined;
 let mobilenetModel = undefined;
 
-// 特徴量蓄積用データベース
+// 特徴量蓄積用データベース（物体と背景）
 let registeredEmbeddings = []; 
+let backgroundEmbeddings = []; 
 let useCustomModel = false;
 let activeCustomName = "";
 let currentAspect = 'square'; // ガイド枠の比率
@@ -217,6 +218,7 @@ window.clearCustomModel = function() {
   if (!confirm("登録した物体データとカスタムモデルを消去しますか？")) return;
 
   registeredEmbeddings = [];
+  backgroundEmbeddings = [];
   useCustomModel = false;
   activeCustomName = "";
 
@@ -300,7 +302,7 @@ window.captureBackground = function() {
   document.getElementById("bgThumbnails").appendChild(img);
 };
 
-// ================= ✂️ 手動切り取り（クロップ）機能の修正版 =================
+// ================= ✂️ 手動切り取り（クロップ）機能 =================
 let capturedImageBitmap = null;
 let isDrawing = false;
 let startX = 0, startY = 0, endX = 0, endY = 0;
@@ -332,7 +334,6 @@ window.captureAndCropMode = function() {
         const cropSection = document.getElementById('crop-section');
         if (!cropCanvas || !cropSection) return;
 
-        // スマホ画面幅に収まる適切な表示サイズに固定（例: 横幅320px）
         const displayWidth = 320;
         const displayHeight = (img.height / img.width) * displayWidth;
 
@@ -368,7 +369,6 @@ if (cropCanvas) {
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
         const clientY = e.touches ? e.touches[0].clientY : e.clientY;
         
-        // 画面上の表示サイズとCanvas内部の解像度の比率を計算して正確な座標を算出
         const scaleX = cropCanvas.width / rect.width;
         const scaleY = cropCanvas.height / rect.height;
 
@@ -477,7 +477,7 @@ window.cancelCrop = function() {
     if (cropSection) cropSection.style.display = "none";
 };
 
-// ⚡ AI特徴量ベクトル抽出・登録処理
+// ⚡ AI特徴量ベクトル抽出・登録処理（背景データも同時記憶）
 window.trainAndRegister = async function() {
   const name = document.getElementById("registerName").value.trim().toLowerCase();
   if (!name) { alert("登録する物体名を入力してください！"); return; }
@@ -495,12 +495,23 @@ window.trainAndRegister = async function() {
 
   try {
     registeredEmbeddings = [];
+    backgroundEmbeddings = [];
 
+    // 物体データの特徴量を抽出
     for (let objCanvas of capturedObjects) {
       tf.tidy(() => {
         const tensor = tf.browser.fromPixels(objCanvas).toFloat().expandDims(0);
         const embedding = mobilenetModel.infer(tensor, true);
         registeredEmbeddings.push(Array.from(embedding.dataSync()));
+      });
+    }
+
+    // 背景データの特徴量を抽出（もし撮影されていれば）
+    for (let bgCanvas of capturedBackgrounds) {
+      tf.tidy(() => {
+        const tensor = tf.browser.fromPixels(bgCanvas).toFloat().expandDims(0);
+        const embedding = mobilenetModel.infer(tensor, true);
+        backgroundEmbeddings.push(Array.from(embedding.dataSync()));
       });
     }
 
@@ -573,7 +584,7 @@ function calculateCosineSimilarity(vecA, vecB) {
   return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
-// ================= リアルタイム推論ループ =================
+// ================= リアルタイム推論ループ（背景フィルター強化版） =================
 async function predictWebcam() {
   if (!webcamRunning) return;
 
@@ -629,15 +640,27 @@ async function predictWebcam() {
             return Array.from(embedding.dataSync());
           });
 
-          let maxSimilarity = 0;
+          // 1. 登録した物体との最大類似度を計算
+          let maxObjSimilarity = 0;
           for (let regEmb of registeredEmbeddings) {
             const similarity = calculateCosineSimilarity(currentEmbedding, regEmb);
-            if (similarity > maxSimilarity) {
-              maxSimilarity = similarity;
+            if (similarity > maxObjSimilarity) {
+              maxObjSimilarity = similarity;
             }
           }
 
-          if (maxSimilarity >= 0.75) {
+          // 2. 登録した背景との最大類似度を計算（背景フィルター）
+          let maxBgSimilarity = 0;
+          for (let bgEmb of backgroundEmbeddings) {
+            const bgSimilarity = calculateCosineSimilarity(currentEmbedding, bgEmb);
+            if (bgSimilarity > maxBgSimilarity) {
+              maxBgSimilarity = bgSimilarity;
+            }
+          }
+
+          // 判定基準：物体との類似度が0.82以上、かつ背景との類似度より十分高い場合のみ検出
+          const threshold = 0.82;
+          if (maxObjSimilarity >= threshold && maxObjSimilarity > (maxBgSimilarity + 0.05)) {
             foundTarget = true;
 
             const boxX = canvas.width * 0.2;
@@ -654,7 +677,7 @@ async function predictWebcam() {
 
             ctx.fillStyle = "#00ff00";
             ctx.font = "bold 16px sans-serif";
-            ctx.fillText(`✨ ${activeCustomName} (${Math.round(maxSimilarity * 100)}%)`, boxX + 10, boxY + 23);
+            ctx.fillText(`✨ ${activeCustomName} (${Math.round(maxObjSimilarity * 100)}%)`, boxX + 10, boxY + 23);
 
             const now = Date.now();
             if (now - lastSaveTime > 3000) {
