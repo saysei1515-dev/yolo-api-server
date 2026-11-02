@@ -179,6 +179,51 @@ window.startRegCamera = async function() {
   } catch (err) { alert("カメラ起動失敗: " + err.message); }
 };
 
+// 🛑 登録用カメラを停止して軽量化する関数
+window.stopRegCamera = function() {
+  const regVideo = document.getElementById("regVideo");
+  if (regVideo && regVideo.srcObject) {
+    const stream = regVideo.srcObject;
+    stream.getTracks().forEach(track => track.stop());
+    regVideo.srcObject = null;
+    document.getElementById("regStatus").innerText = "ステータス: 登録カメラを停止しました（省電力）";
+    document.getElementById("regStatus").style.color = "#aaa";
+  }
+};
+
+// 🗑️ 登録した物体・モデルをすべて消去・リセットする関数
+window.clearCustomModel = function() {
+  if (!confirm("登録した物体データとカスタムモデルを消去しますか？")) return;
+
+  if (customClassifier) {
+    customClassifier.dispose();
+    customClassifier = null;
+  }
+  useCustomModel = false;
+  activeCustomName = "";
+
+  capturedObjects = [];
+  capturedBackgrounds = [];
+  document.getElementById("objCount").innerText = "0";
+  document.getElementById("bgCount").innerText = "0";
+  document.getElementById("objThumbnails").innerHTML = "";
+  document.getElementById("bgThumbnails").innerHTML = "";
+
+  document.getElementById("registeredList").innerHTML = "";
+  document.getElementById("quickSelectList").innerHTML = "";
+
+  const modelSelect = document.getElementById("modelSelect");
+  const customOption = modelSelect.querySelector('option[value="custom"]');
+  if (customOption) {
+    customOption.remove();
+  }
+  modelSelect.value = "lite0";
+
+  document.getElementById("registerName").value = "";
+  document.getElementById("regStatus").innerText = "ステータス: すべての登録データを消去しました";
+  document.getElementById("regStatus").style.color = "#ff4444";
+};
+
 // ガイド枠（中央160x160）の部分を正確にクロップして224x224（MobileNet用）にする関数
 function cropGuideArea() {
   const regVideo = document.getElementById("regVideo");
@@ -245,7 +290,6 @@ window.trainAndRegister = async function() {
   document.getElementById("regStatus").style.color = "#ffc107";
 
   try {
-    // 転移学習用の分類モデル構築
     customClassifier = tf.sequential();
     customClassifier.add(tf.layers.dense({ units: 16, activation: 'relu', inputShape: [1024] }));
     customClassifier.add(tf.layers.dense({ units: 2, activation: 'softmax' })); // [背景, 物体]
@@ -254,7 +298,6 @@ window.trainAndRegister = async function() {
     let inputs = [];
     let labels = [];
 
-    // 背景データの変換と登録（ラベル: [1, 0]）
     for (let bgCanvas of capturedBackgrounds) {
       const tensor = tf.browser.fromPixels(bgCanvas).toFloat().expandDims(0);
       const embedding = mobilenetModel.infer(tensor, true);
@@ -263,7 +306,6 @@ window.trainAndRegister = async function() {
       tensor.dispose();
     }
 
-    // 物体データの変換と登録（ラベル: [0, 1]）
     for (let objCanvas of capturedObjects) {
       const tensor = tf.browser.fromPixels(objCanvas).toFloat().expandDims(0);
       const embedding = mobilenetModel.infer(tensor, true);
@@ -275,7 +317,6 @@ window.trainAndRegister = async function() {
     const xs = tf.concat(inputs);
     const ys = tf.tensor2d(labels);
 
-    // 学習実行（エポック数15で高速に完了）
     await customClassifier.fit(xs, ys, {
       epochs: 15,
       shuffle: true
@@ -286,7 +327,6 @@ window.trainAndRegister = async function() {
 
     activeCustomName = name;
 
-    // セレクトボックスにカスタムモデルを追加
     const modelSelect = document.getElementById("modelSelect");
     if (!document.querySelector('#modelSelect option[value="custom"]')) {
       modelSelect.innerHTML += `<option value="custom">カスタム: ${name}</option>`;
@@ -299,9 +339,8 @@ window.trainAndRegister = async function() {
     document.getElementById("regStatus").innerText = `🎉 「${name}」のAI学習が完了しました！探索モードで使えます。`;
     document.getElementById("regStatus").style.color = "#00ff00";
 
-    // 登録リストおよびクイック選択ボタンに追加
     const registeredList = document.getElementById("registeredList");
-    registeredList.innerHTML = ""; // 修正: クリア処理を正常化
+    registeredList.innerHTML = "";
 
     const container = document.createElement("div");
     container.style.textAlign = "center";
@@ -324,7 +363,6 @@ window.trainAndRegister = async function() {
     quickBtn.onclick = () => selectCustomTarget(name);
     document.getElementById("quickSelectList").appendChild(quickBtn);
 
-    // 撮影バッファをリセット
     capturedObjects = [];
     capturedBackgrounds = [];
     document.getElementById("objCount").innerText = "0";
@@ -358,7 +396,6 @@ async function predictWebcam() {
       let foundTarget = false;
 
       if (useCustomModel && customClassifier) {
-        // 独自カスタムモデルでの判定
         const tensor = tf.browser.fromPixels(video).toFloat().expandDims(0);
         const embedding = mobilenetModel.infer(tensor, true);
         const prediction = customClassifier.predict(embedding);
@@ -368,7 +405,6 @@ async function predictWebcam() {
         embedding.dispose();
         prediction.dispose();
 
-        // 確率 [背景, 物体] が 0.8以上の場合に検出とみなす
         if (probabilities[1] > 0.8) {
           foundTarget = true;
           ctx.strokeStyle = "#00ff00";
@@ -379,7 +415,6 @@ async function predictWebcam() {
           ctx.fillText(`✨ ${activeCustomName} (${Math.round(probabilities[1] * 100)}%)`, 50, 70);
         }
       } else if (objectDetector) {
-        // 通常のMediaPipeモデルでの検出
         const detections = objectDetector.detectForVideo(video, performance.now());
         if (detections && detections.detections) {
           const scaleX = canvas.width / video.videoWidth;
