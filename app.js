@@ -285,7 +285,7 @@ window.trainAndRegister = async function() {
     ys.dispose();
 
     activeCustomName = name;
-    
+
     // セレクトボックスにカスタムモデルを追加
     const modelSelect = document.getElementById("modelSelect");
     if (!document.querySelector('#modelSelect option[value="custom"]')) {
@@ -300,6 +300,9 @@ window.trainAndRegister = async function() {
     document.getElementById("regStatus").style.color = "#00ff00";
 
     // 登録リストおよびクイック選択ボタンに追加
+    const registeredList = document.getElementById("registeredList");
+    registeredList.innerHTML = ""; // 修正: クリア処理を正常化
+
     const container = document.createElement("div");
     container.style.textAlign = "center";
     container.style.cursor = "pointer";
@@ -313,8 +316,7 @@ window.trainAndRegister = async function() {
     const lbl = document.createElement("div");
     lbl.innerText = name; lbl.style.fontSize = "10px"; lbl.style.color = "#fff";
     container.appendChild(lbl);
-    document.getElementById("registeredList.innerHTML = ''; // クリア"
-    document.getElementById("registeredList").appendChild(container);
+    registeredList.appendChild(container);
 
     const quickBtn = document.createElement("button");
     quickBtn.innerText = `🔍 ${name}`;
@@ -361,7 +363,7 @@ async function predictWebcam() {
         const embedding = mobilenetModel.infer(tensor, true);
         const prediction = customClassifier.predict(embedding);
         const probabilities = await prediction.data();
-        
+
         tensor.dispose();
         embedding.dispose();
         prediction.dispose();
