@@ -11,18 +11,22 @@ const ctx = canvas.getContext("2d");
 const status = document.getElementById("status");
 const startButton = document.getElementById("startButton");
 const stopButton = document.getElementById("stopButton");
+const connStatus = document.getElementById("connectionStatus");
 
 let lastVideoTime = -1;
 let currentSearchWord = "cup";
-let lastSaveTime = 0; // 履歴の連続保存を防ぐためのタイマー
+let lastSaveTime = 0; 
 
-// MediaPipe公式のLiteモデルのパス
+// PeerJSの初期化
+const peer = new Peer();
+let conn = null;
+
 const modelPaths = {
   lite0: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite",
   lite2: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite2/float16/1/efficientdet_lite2.tflite"
 };
 
-// 初期AIロード
+// 1. 初期AIロード
 async function initializeAI() {
   status.innerText = "ステータス: AIモデルをロード中...";
   status.style.color = "#ffc107";
@@ -43,10 +47,8 @@ async function initializeAI() {
       runningMode: runningMode
     });
 
-    startButton.disabled = false;
-    startButton.innerText = "カメラ起動 & 探索スタート";
-    status.innerText = "ステータス: 準備完了";
-    status.style.color = "#00ff00";
+    status.innerText = "ステータス: PCのIDを入力して接続してください";
+    status.style.color = "#007bff";
   } catch (err) {
     console.error(err);
     status.innerText = "エラー: AIのロードに失敗しました";
@@ -56,18 +58,51 @@ async function initializeAI() {
 
 initializeAI();
 
-// 途中でモデルを切り替えたときの処理
-window.changeModel = async function() {
-  const selectedModel = document.getElementById("modelSelect").value;
-  const wasRunning = webcamRunning;
-
-  if (webcamRunning) {
-    stopCamera();
+// PCへ接続する処理
+window.connectToPC = function() {
+  const pcId = document.getElementById("pcIdInput").value.trim();
+  if (!pcId) {
+    alert("PCのIDを入力してください！");
+    return;
   }
 
-  status.innerText = `ステータス: ${selectedModel.toUpperCase()} に切り替え中...`;
-  status.style.color = "#ffc107";
+  connStatus.innerText = "ステータス: 接続中...";
+  conn = peer.connect(pcId);
 
+  conn.on('open', () => {
+    connStatus.innerText = "ステータス: 接続完了 ✅";
+    connStatus.style.color = "#28a745";
+    startButton.disabled = false;
+    startButton.innerText = "遠隔カメラ起動 & 探索スタート";
+    status.innerText = "ステータス: 準備完了";
+    status.style.color = "#00ff00";
+  });
+
+  conn.on('error', (err) => {
+    console.error(err);
+    connStatus.innerText = "ステータス: 接続エラー ❌";
+    connStatus.style.color = "#dc3545";
+  });
+};
+
+// ★ PC側から送られてくる遠隔カメラの映像ストリームをスマホで受けてAI検出を開始する
+peer.on('call', (call) => {
+  call.answer(); // 通話に応答
+  call.on('stream', (remoteStream) => {
+    video.srcObject = remoteStream;
+    webcamRunning = true;
+    startButton.style.display = "none";
+    stopButton.style.display = "block";
+    status.innerText = `ステータス: 探索中... (${currentSearchWord})`;
+    status.style.color = "#00ff00";
+
+    video.onloadeddata = () => { predictWebcam(); };
+  });
+});
+
+// モデル切り替え
+window.changeModel = async function() {
+  const selectedModel = document.getElementById("modelSelect").value;
   try {
     objectDetector = await ObjectDetector.createFromOptions(vision, {
       baseOptions: {
@@ -77,17 +112,8 @@ window.changeModel = async function() {
       scoreThreshold: 0.3,
       runningMode: runningMode
     });
-
-    status.innerText = `ステータス: 切り替え完了 (${selectedModel})`;
-    status.style.color = "#00ff00";
-
-    if (wasRunning) {
-      startCamera();
-    }
   } catch (err) {
     console.error(err);
-    status.innerText = "エラー: モデルの切り替えに失敗しました";
-    status.style.color = "#ff4444";
   }
 };
 
@@ -102,30 +128,28 @@ window.updateTarget = function() {
   status.style.color = "#00ff00";
 };
 
-window.startCamera = async function() {
-  if (!objectDetector) return;
+// スマホからPCへ「カメラ起動」の命令を送る
+window.startCamera = function() {
+  if (!objectDetector || !conn || !conn.open) {
+    alert("先にPCと接続してください！");
+    return;
+  }
   currentSearchWord = document.getElementById("targetObject").value.trim().toLowerCase();
 
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'environment' },
-      audio: false
-    });
+  // PCへ、自分のPeer IDを添えてスタート命令を送信
+  conn.send({
+    action: 'start',
+    keyword: currentSearchWord,
+    smartphoneId: peer.id
+  });
 
-    video.srcObject = stream;
-    webcamRunning = true;
-    startButton.style.display = "none";
-    stopButton.style.display = "block";
-    status.innerText = `ステータス: 探索中... (${currentSearchWord})`;
-
-    video.onloadeddata = () => { predictWebcam(); };
-  } catch (err) {
-    console.error(err);
-    alert("カメラを起動できませんでした。");
-  }
+  status.innerText = "ステータス: 遠隔カメラ起動要求を送信中...";
 };
 
 window.stopCamera = function() {
+  if (conn && conn.open) {
+    conn.send({ action: 'stop' });
+  }
   webcamRunning = false;
   const stream = video.srcObject;
   if (stream) stream.getTracks().forEach(track => track.stop());
@@ -138,7 +162,7 @@ window.stopCamera = function() {
   status.style.color = "#aaa";
 };
 
-// 発見したときの画像を履歴に保存する関数
+// 発見したときの画像を履歴に保存
 function saveFoundImage(bbox) {
   const gallery = document.getElementById("imageGallery");
   if (!gallery) return;
@@ -165,7 +189,7 @@ function saveFoundImage(bbox) {
   gallery.prepend(img);
 }
 
-// ★追加：履歴をすべてクリアする関数
+// 履歴クリア
 window.clearGallery = function() {
   const gallery = document.getElementById("imageGallery");
   if (gallery) {
@@ -173,7 +197,7 @@ window.clearGallery = function() {
   }
 };
 
-// リアルタイム推論
+// リアルタイム推論ループ（飛んできた遠隔映像をAIで検出）
 async function predictWebcam() {
   if (!webcamRunning) return;
 
