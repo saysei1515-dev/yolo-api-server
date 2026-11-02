@@ -58,6 +58,26 @@ async function initializeAI() {
 
 initializeAI();
 
+// 🔗 タブ切り替え処理
+window.switchTab = function(tabName) {
+  document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+
+  if (tabName === 'search') {
+    document.querySelector('.tab-menu button:nth-child(1)').classList.add('active');
+    document.getElementById('searchTab').classList.add('active');
+  } else {
+    document.querySelector('.tab-menu button:nth-child(2)').classList.add('active');
+    document.getElementById('registerTab').classList.add('active');
+    
+    // 登録タブに切り替えた際、現在の映像ストリームを登録用videoにも共有
+    const regVideo = document.getElementById("regVideo");
+    if (video.srcObject && !regVideo.srcObject) {
+      regVideo.srcObject = video.srcObject;
+    }
+  }
+};
+
 // PCへ接続する処理
 window.connectToPC = function() {
   const pcId = document.getElementById("pcIdInput").value.trim();
@@ -85,11 +105,12 @@ window.connectToPC = function() {
   });
 };
 
-// ★ PC側から送られてくる遠隔カメラの映像ストリームをスマホで受けてAI検出を開始する
+// PC側から送られてくる遠隔カメラの映像ストリームを受信
 peer.on('call', (call) => {
-  call.answer(); // 通話に応答
+  call.answer();
   call.on('stream', (remoteStream) => {
     video.srcObject = remoteStream;
+    document.getElementById("regVideo").srcObject = remoteStream;
     webcamRunning = true;
     startButton.style.display = "none";
     stopButton.style.display = "block";
@@ -128,7 +149,6 @@ window.updateTarget = function() {
   status.style.color = "#00ff00";
 };
 
-// スマホからPCへ「カメラ起動」の命令を送る
 window.startCamera = function() {
   if (!objectDetector || !conn || !conn.open) {
     alert("先にPCと接続してください！");
@@ -136,7 +156,6 @@ window.startCamera = function() {
   }
   currentSearchWord = document.getElementById("targetObject").value.trim().toLowerCase();
 
-  // PCへ、自分のPeer IDを添えてスタート命令を送信
   conn.send({
     action: 'start',
     keyword: currentSearchWord,
@@ -154,6 +173,7 @@ window.stopCamera = function() {
   const stream = video.srcObject;
   if (stream) stream.getTracks().forEach(track => track.stop());
   video.srcObject = null;
+  document.getElementById("regVideo").srcObject = null;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   stopButton.style.display = "none";
@@ -162,7 +182,71 @@ window.stopCamera = function() {
   status.style.color = "#aaa";
 };
 
-// 発見したときの画像を履歴に保存
+// 📦 手動クロップ＆物体登録機能
+let croppedDataUrl = null;
+window.captureForCrop = function() {
+  const regVideo = document.getElementById("regVideo");
+  if (!regVideo.srcObject) {
+    alert("先にPCカメラを起動してください！");
+    return;
+  }
+  const regCanvas = document.getElementById("regCanvas");
+  regCanvas.width = regVideo.clientWidth;
+  regCanvas.height = regVideo.clientHeight;
+  const regCtx = regCanvas.getContext("2d");
+
+  // 中央部分を切り抜くサンプル（手動クロップ枠）
+  const cropWidth = 150;
+  const cropHeight = 150;
+  const cropX = (regVideo.videoWidth - cropWidth) / 2;
+  const cropY = (regVideo.videoHeight - cropHeight) / 2;
+
+  regCtx.drawImage(regVideo, 0, 0, regVideo.videoWidth, regVideo.videoHeight, 0, 0, regCanvas.width, regCanvas.height);
+  
+  // 枠線の描画
+  regCtx.strokeStyle = "#ffc107";
+  regCtx.lineWidth = 3;
+  regCtx.strokeRect(regCanvas.width / 2 - 75, regCanvas.height / 2 - 75, 150, 150);
+
+  document.getElementById("regStatus").innerText = "ステータス: 中央の枠内を切り取りました。「この範囲を登録する」を押してください";
+};
+
+window.saveRegisteredItem = function() {
+  const name = document.getElementById("registerName").value.trim();
+  if (!name) {
+    alert("登録するアイテム名を入力してください！");
+    return;
+  }
+
+  const regVideo = document.getElementById("regVideo");
+  if (!regVideo.srcObject) { alert("カメラが起動していません"); return; }
+
+  const tempCanvas = document.createElement("canvas");
+  tempCanvas.width = 100;
+  tempCanvas.height = 100;
+  tempCanvas.getContext("2d").drawImage(regVideo, 0, 0, tempCanvas.width, tempCanvas.height);
+
+  const img = document.createElement("img");
+  img.src = tempCanvas.toDataURL("image/jpeg");
+  img.style.width = "70px";
+  img.style.height = "70px";
+  img.style.objectFit = "cover";
+  img.style.borderRadius = "6px";
+  img.style.border = "2px solid #28a745";
+
+  const container = document.createElement("div");
+  container.style.textAlign = "center";
+  container.appendChild(img);
+  const label = document.createElement("div");
+  label.innerText = name;
+  label.style.fontSize = "10px";
+  container.appendChild(label);
+
+  document.getElementById("registeredList").appendChild(container);
+  document.getElementById("regStatus").innerText = `✅ 「${name}」を登録しました！`;
+  document.getElementById("registerName").value = "";
+};
+
 function saveFoundImage(bbox) {
   const gallery = document.getElementById("imageGallery");
   if (!gallery) return;
@@ -189,7 +273,6 @@ function saveFoundImage(bbox) {
   gallery.prepend(img);
 }
 
-// 履歴クリア
 window.clearGallery = function() {
   const gallery = document.getElementById("imageGallery");
   if (gallery) {
@@ -197,7 +280,7 @@ window.clearGallery = function() {
   }
 };
 
-// リアルタイム推論ループ（飛んできた遠隔映像をAIで検出）
+// リアルタイム推論ループ
 async function predictWebcam() {
   if (!webcamRunning) return;
 
