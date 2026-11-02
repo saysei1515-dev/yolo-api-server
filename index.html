@@ -78,8 +78,10 @@
         <input type="text" id="registerName" placeholder="例: my_keys, special_card" style="width: 100%; padding: 10px; box-sizing: border-box;">
       </div>
 
-      <div class="button-group" style="margin-bottom: 10px;">
-        <button onclick="startRegCamera()" style="width: 100%; padding: 10px; background: #17a2b8; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">📱 スマホの登録カメラを起動</button>
+      <!-- カメラ起動 ＆ 停止ボタン -->
+      <div style="display: flex; gap: 8px; margin-bottom: 10px;">
+        <button onclick="startRegCamera()" style="flex: 1; padding: 10px; background: #17a2b8; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">📱 登録カメラ起動</button>
+        <button onclick="stopRegCamera()" style="flex: 1; padding: 10px; background: #6c757d; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">⏹️ カメラ停止</button>
       </div>
 
       <div class="camera-container" style="position: relative; width: 100%; background: #000; border-radius: 8px; overflow: hidden;">
@@ -109,6 +111,11 @@
 
       <div class="button-group" style="margin-top: 15px;">
         <button onclick="trainAndRegister()" style="width: 100%; padding: 14px; background: #28a745; color: #fff; border: none; border-radius: 6px; font-weight: bold; font-size: 16px; cursor: pointer;">⚡ AIに学習させて登録完了</button>
+      </div>
+
+      <!-- 登録した物体を消去するボタン -->
+      <div style="margin-top: 8px;">
+        <button onclick="clearCustomModel()" style="width: 100%; padding: 10px; background: #dc3545; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">🗑️ 登録した物体・モデルを消去</button>
       </div>
 
       <div id="regStatus" class="status-box" style="margin-top: 10px;">ステータス: スマホカメラを起動し、物体と背景を複数角度から撮影してください</div>
