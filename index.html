@@ -3,20 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI探偵カメラ（物体登録対応）</title>
+  <title>AI探偵カメラ（物体登録ガイド付き）</title>
   <link rel="stylesheet" href="style.css">
 
   <!-- MediaPipe & PeerJS -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.2"></script>
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-  <style>
-    /* タブ切り替え用のスタイル */
-    .tab-menu { display: flex; margin-bottom: 15px; border-radius: 6px; overflow: hidden; border: 1px solid #ccc; }
-    .tab-btn { flex: 1; padding: 10px; background: #e9ecef; border: none; font-weight: bold; cursor: pointer; }
-    .tab-btn.active { background: #007bff; color: #fff; }
-    .tab-content { display: none; }
-    .tab-content.active { display: block; }
-  </style>
 </head>
 <body>
 
@@ -29,18 +21,18 @@
       <button class="tab-btn" onclick="switchTab('register')">📦 物体登録モード</button>
     </div>
 
-    <!-- 🔗 PC接続用のID入力エリア -->
-    <div class="control-group" style="border: 2px solid #007bff; background: #f0f7ff;">
-      <label for="pcIdInput" style="color: #007bff;">🔗 PC接続用ID:</label>
-      <div style="display: flex; gap: 5px;">
-        <input type="text" id="pcIdInput" placeholder="PC側のIDを入力" style="flex: 1;">
-        <button onclick="connectToPC()" style="padding: 0 15px; background: #007bff; color: #fff; border: none; font-weight: bold; border-radius: 4px; cursor: pointer;">接続</button>
-      </div>
-      <div id="connectionStatus" style="font-size: 12px; color: #666; margin-top: 5px;">ステータス: 未接続</div>
-    </div>
-
     <!-- ================= 探索モード画面 ================= -->
     <div id="searchTab" class="tab-content active">
+      <!-- 🔗 PC接続用のID入力エリア -->
+      <div class="control-group" style="border: 2px solid #007bff; background: #f0f7ff;">
+        <label for="pcIdInput" style="color: #007bff;">🔗 PC接続用ID:</label>
+        <div style="display: flex; gap: 5px;">
+          <input type="text" id="pcIdInput" placeholder="PC側のIDを入力" style="flex: 1;">
+          <button onclick="connectToPC()" style="padding: 0 15px; background: #007bff; color: #fff; border: none; font-weight: bold; border-radius: 4px; cursor: pointer;">接続</button>
+        </div>
+        <div id="connectionStatus" style="font-size: 12px; color: #666; margin-top: 5px;">ステータス: 未接続</div>
+      </div>
+
       <div class="control-group">
         <label for="targetObject">探すもの (英語):</label>
         <div style="display: flex; gap: 5px;">
@@ -76,26 +68,31 @@
       <div id="imageGallery" class="gallery" style="display: flex; gap: 10px; overflow-x: auto; padding: 10px 0;"></div>
     </div>
 
-    <!-- ================= 物体登録モード画面（手動切り抜き対応） ================= -->
+    <!-- ================= 物体登録モード画面（スマホカメラ ＆ ガイド枠） ================= -->
     <div id="registerTab" class="tab-content">
       <div class="control-group">
         <label for="registerName">登録するアイテム名:</label>
-        <input type="text" id="registerName" placeholder="例: my_special_item" style="width: 100%; padding: 10px; box-sizing: border-box;">
+        <input type="text" id="registerName" placeholder="例: my_item" style="width: 100%; padding: 10px; box-sizing: border-box;">
       </div>
 
-      <div class="camera-container" style="position: relative; width: 100%; background: #000; border-radius: 8px; overflow: hidden; margin-top: 10px;">
+      <div class="button-group" style="margin-bottom: 10px;">
+        <button onclick="startRegCamera()" style="width: 100%; padding: 10px; background: #17a2b8; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">📱 スマホの登録カメラを起動</button>
+      </div>
+
+      <div class="camera-container" style="position: relative; width: 100%; background: #000; border-radius: 8px; overflow: hidden;">
         <video id="regVideo" autoplay muted playsinline style="width: 100%; display: block;"></video>
-        <canvas id="regCanvas" style="position: absolute; left: 0; top: 0; width: 100%; height: 100%;"></canvas>
+        <!-- ガイド枠（オーバーレイ） -->
+        <div id="cropGuide" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 160px; height: 160px; border: 3px dashed #ffc107; pointer-events: none; border-radius: 8px; box-shadow: 0 0 0 9999px rgba(0,0,0,0.5);"></div>
+        <canvas id="regCanvas" style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: none;"></canvas>
       </div>
 
-      <p style="font-size: 12px; color: #666; margin-top: 5px;">※ 映像を一時停止して手動で切り抜き範囲を指定します</p>
+      <p style="font-size: 12px; color: #ffc107; margin-top: 5px;">⚠️ 黄色のガイド枠内にアイテムを収めてください</p>
 
       <div class="button-group" style="margin-top: 10px;">
-        <button onclick="captureForCrop()" style="width: 100%; padding: 12px; background: #ffc107; color: #000; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">📸 現在の映像をキャプチャして切り抜き</button>
-        <button onclick="saveRegisteredItem()" style="width: 100%; margin-top: 8px; padding: 12px; background: #28a745; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">💾 この範囲を登録する</button>
+        <button onclick="saveRegisteredItem()" style="width: 100%; padding: 12px; background: #28a745; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">💾 ガイド内を切り抜いて登録</button>
       </div>
 
-      <div id="regStatus" class="status-box" style="margin-top: 10px;">ステータス: 登録するアイテム名と映像を確認してください</div>
+      <div id="regStatus" class="status-box" style="margin-top: 10px;">ステータス: スマホカメラを起動してください</div>
 
       <h3 style="margin: 20px 0 10px 0; font-size: 16px;">📦 登録済みアイテム一覧</h3>
       <div id="registeredList" style="display: flex; gap: 10px; overflow-x: auto; padding: 10px 0;"></div>
