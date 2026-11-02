@@ -60,7 +60,7 @@ initializeAI();
 window.changeModel = async function() {
   const selectedModel = document.getElementById("modelSelect").value;
   const wasRunning = webcamRunning;
-  
+
   if (webcamRunning) {
     stopCamera();
   }
@@ -77,7 +77,7 @@ window.changeModel = async function() {
       scoreThreshold: 0.3,
       runningMode: runningMode
     });
-    
+
     status.innerText = `ステータス: 切り替え完了 (${selectedModel})`;
     status.style.color = "#00ff00";
 
@@ -210,7 +210,7 @@ async function predictWebcam() {
           if (categoryName.includes(currentSearchWord)) {
             foundTarget = true;
             const bbox = detection.boundingBox;
-            
+
             const x = bbox.originX * scaleX;
             const y = bbox.originY * scaleY;
             const width = bbox.width * scaleX;
