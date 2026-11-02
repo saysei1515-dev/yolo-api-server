@@ -300,46 +300,66 @@ window.captureBackground = function() {
   document.getElementById("bgThumbnails").appendChild(img);
 };
 
-// ================= ✂️ 追加機能：手動マウス・タッチ切り取り（クロップ）処理 =================
+// ================= ✂️ 手動切り取り（クロップ）機能の堅牢版 =================
 let capturedImageBitmap = null;
 let isDrawing = false;
-let startX, startY, endX, endY;
-
-const cropSection = document.getElementById('crop-section');
-const cropCanvas = document.getElementById('cropCanvas');
-const ctxCrop = cropCanvas ? cropCanvas.getContext('2d') : null;
+let startX = 0, startY = 0, endX = 0, endY = 0;
 
 window.captureAndCropMode = function() {
     const regVideo = document.getElementById('regVideo');
-    if (!regVideo || !regVideo.videoWidth) {
-        alert("先に「登録カメラ起動」を押してください！");
+    if (!regVideo) {
+        alert("登録用カメラの要素が見つかりません。");
+        return;
+    }
+
+    const width = regVideo.videoWidth;
+    const height = regVideo.videoHeight;
+
+    if (!width || !height) {
+        alert("カメラの映像がまだ準備できていません。「登録カメラ起動」を押して映像が映るのを確認してから押してください。");
         return;
     }
 
     const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = regVideo.videoWidth;
-    tempCanvas.height = regVideo.videoHeight;
+    tempCanvas.width = width;
+    tempCanvas.height = height;
     const tempCtx = tempCanvas.getContext('2d');
-    tempCtx.drawImage(regVideo, 0, 0);
+    tempCtx.drawImage(regVideo, 0, 0, width, height);
 
     const img = new Image();
     img.onload = function() {
-        if (!cropCanvas) return;
-        cropCanvas.width = img.width > 350 ? 350 : img.width;
-        cropCanvas.height = (img.height / img.width) * cropCanvas.width;
+        const cropCanvas = document.getElementById('cropCanvas');
+        const cropSection = document.getElementById('crop-section');
+        if (!cropCanvas || !cropSection) return;
+
+        const displayWidth = img.width > 350 ? 350 : img.width;
+        const displayHeight = (img.height / img.width) * displayWidth;
+
+        cropCanvas.width = displayWidth;
+        cropCanvas.height = displayHeight;
+
+        const ctxCrop = cropCanvas.getContext('2d');
+        ctxCrop.clearRect(0, 0, displayWidth, displayHeight);
+        ctxCrop.drawImage(img, 0, 0, displayWidth, displayHeight);
         
-        ctxCrop.drawImage(img, 0, 0, cropCanvas.width, cropCanvas.height);
         capturedImageBitmap = img;
+
+        cropSection.style.display = "block";
+        cropSection.scrollIntoView({ behavior: 'smooth' });
         
-        if (cropSection) {
-            cropSection.style.display = "block";
-            cropSection.scrollIntoView({ behavior: 'smooth' });
+        const regStatus = document.getElementById("regStatus");
+        if (regStatus) {
+            regStatus.innerText = "ステータス: 写真が読み込まれました。範囲をドラッグしてください。";
+            regStatus.style.color = "#ffc107";
         }
     };
     img.src = tempCanvas.toDataURL('image/jpeg');
 };
 
+const cropCanvas = document.getElementById('cropCanvas');
 if (cropCanvas) {
+    const ctxCrop = cropCanvas.getContext('2d');
+
     function getCursorPos(e) {
         const rect = cropCanvas.getBoundingClientRect();
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
@@ -350,48 +370,50 @@ if (cropCanvas) {
         };
     }
 
-    cropCanvas.addEventListener('mousedown', startDraw);
-    cropCanvas.addEventListener('touchstart', startDraw);
-
-    cropCanvas.addEventListener('mousemove', drawRect);
-    cropCanvas.addEventListener('touchmove', drawRect);
-
-    cropCanvas.addEventListener('mouseup', endDraw);
-    cropCanvas.addEventListener('touchend', endDraw);
-
-    function startDraw(e) {
-        e.preventDefault();
+    cropCanvas.onmousedown = (e) => {
         isDrawing = true;
         const pos = getCursorPos(e);
         startX = pos.x;
         startY = pos.y;
-    }
+    };
 
-    function drawRect(e) {
-        if (!isDrawing) return;
-        e.preventDefault();
+    cropCanvas.ontouchstart = (e) => {
+        isDrawing = true;
+        const pos = getCursorPos(e);
+        startX = pos.x;
+        startY = pos.y;
+    };
+
+    cropCanvas.onmousemove = (e) => {
+        if (!isDrawing || !capturedImageBitmap) return;
         const pos = getCursorPos(e);
         endX = pos.x;
         endY = pos.y;
 
-        redrawCropCanvas();
-        if (ctxCrop) {
-            ctxCrop.strokeStyle = "#ff0055";
-            ctxCrop.lineWidth = 3;
-            ctxCrop.strokeRect(startX, startY, endX - startX, endY - startY);
-        }
-    }
-
-    function endDraw(e) {
-        if (!isDrawing) return;
-        isDrawing = false;
-    }
-
-    function redrawCropCanvas() {
-        if (!capturedImageBitmap || !ctxCrop) return;
         ctxCrop.clearRect(0, 0, cropCanvas.width, cropCanvas.height);
         ctxCrop.drawImage(capturedImageBitmap, 0, 0, cropCanvas.width, cropCanvas.height);
-    }
+
+        ctxCrop.strokeStyle = "#ff0055";
+        ctxCrop.lineWidth = 3;
+        ctxCrop.strokeRect(startX, startY, endX - startX, endY - startY);
+    };
+
+    cropCanvas.ontouchmove = (e) => {
+        if (!isDrawing || !capturedImageBitmap) return;
+        const pos = getCursorPos(e);
+        endX = pos.x;
+        endY = pos.y;
+
+        ctxCrop.clearRect(0, 0, cropCanvas.width, cropCanvas.height);
+        ctxCrop.drawImage(capturedImageBitmap, 0, 0, cropCanvas.width, cropCanvas.height);
+
+        ctxCrop.strokeStyle = "#ff0055";
+        ctxCrop.lineWidth = 3;
+        ctxCrop.strokeRect(startX, startY, endX - startX, endY - startY);
+    };
+
+    cropCanvas.onmouseup = () => { isDrawing = false; };
+    cropCanvas.ontouchend = () => { isDrawing = false; };
 }
 
 window.confirmCrop = function() {
@@ -409,7 +431,7 @@ window.confirmCrop = function() {
     cutCanvas.width = 224;
     cutCanvas.height = 224;
     const cutCtx = cutCanvas.getContext('2d');
-    
+
     const scaleX = capturedImageBitmap.width / cropCanvas.width;
     const scaleY = capturedImageBitmap.height / cropCanvas.height;
 
@@ -431,12 +453,18 @@ window.confirmCrop = function() {
         thumbContainer.appendChild(img);
     }
 
+    const cropSection = document.getElementById('crop-section');
     if (cropSection) cropSection.style.display = "none";
+    
     const regStatus = document.getElementById("regStatus");
-    if (regStatus) regStatus.innerText = "ステータス: 手動で切り抜いた領域を物体データに追加しました！";
+    if (regStatus) {
+        regStatus.innerText = "ステータス: 手動で切り抜いた領域を物体データに追加しました！";
+        regStatus.style.color = "#00ff00";
+    }
 };
 
 window.cancelCrop = function() {
+    const cropSection = document.getElementById('crop-section');
     if (cropSection) cropSection.style.display = "none";
 };
 
