@@ -444,9 +444,13 @@ window.confirmCrop = function() {
     cutCanvas.height = 224;
     const cutCtx = cutCanvas.getContext('2d');
 
+    // 正確なスケール比率を適用してクロップ
+    const scaleX = capturedImageBitmap.width / cropCanvas.width;
+    const scaleY = capturedImageBitmap.height / cropCanvas.height;
+
     cutCtx.drawImage(
         capturedImageBitmap, 
-        x, y, w, h,
+        x * scaleX, y * scaleY, w * scaleX, h * scaleY,
         0, 0, 224, 224
     );
 
@@ -477,7 +481,7 @@ window.cancelCrop = function() {
     if (cropSection) cropSection.style.display = "none";
 };
 
-// ⚡ AI特徴量ベクトル抽出・登録処理（背景データも同時記憶）
+// ⚡ AI特徴量ベクトル抽出・登録処理
 window.trainAndRegister = async function() {
   const name = document.getElementById("registerName").value.trim().toLowerCase();
   if (!name) { alert("登録する物体名を入力してください！"); return; }
@@ -497,7 +501,6 @@ window.trainAndRegister = async function() {
     registeredEmbeddings = [];
     backgroundEmbeddings = [];
 
-    // 物体データの特徴量を抽出
     for (let objCanvas of capturedObjects) {
       tf.tidy(() => {
         const tensor = tf.browser.fromPixels(objCanvas).toFloat().expandDims(0);
@@ -506,7 +509,6 @@ window.trainAndRegister = async function() {
       });
     }
 
-    // 背景データの特徴量を抽出（もし撮影されていれば）
     for (let bgCanvas of capturedBackgrounds) {
       tf.tidy(() => {
         const tensor = tf.browser.fromPixels(bgCanvas).toFloat().expandDims(0);
@@ -584,7 +586,7 @@ function calculateCosineSimilarity(vecA, vecB) {
   return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
-// ================= リアルタイム推論ループ（背景フィルター強化版） =================
+// ================= リアルタイム推論ループ =================
 async function predictWebcam() {
   if (!webcamRunning) return;
 
@@ -640,7 +642,6 @@ async function predictWebcam() {
             return Array.from(embedding.dataSync());
           });
 
-          // 1. 登録した物体との最大類似度を計算
           let maxObjSimilarity = 0;
           for (let regEmb of registeredEmbeddings) {
             const similarity = calculateCosineSimilarity(currentEmbedding, regEmb);
@@ -649,7 +650,6 @@ async function predictWebcam() {
             }
           }
 
-          // 2. 登録した背景との最大類似度を計算（背景フィルター）
           let maxBgSimilarity = 0;
           for (let bgEmb of backgroundEmbeddings) {
             const bgSimilarity = calculateCosineSimilarity(currentEmbedding, bgEmb);
@@ -658,7 +658,6 @@ async function predictWebcam() {
             }
           }
 
-          // 判定基準：物体との類似度が0.82以上、かつ背景との類似度より十分高い場合のみ検出
           const threshold = 0.82;
           if (maxObjSimilarity >= threshold && maxObjSimilarity > (maxBgSimilarity + 0.05)) {
             foundTarget = true;
