@@ -3,48 +3,26 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI探偵カメラ - スマホリモコン</title>
+  <title>AI探偵カメラ（履歴クリア機能付き）</title>
+  <link rel="stylesheet" href="style.css">
+
+  <!-- MediaPipe Object Detection -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.2"></script>
-  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-  <style>
-    body { font-family: sans-serif; text-align: center; margin: 0; padding: 15px; background: #f4f4f9; color: #333; }
-    .app-container { max-width: 500px; margin: 0 auto; background: #fff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
-    h1 { font-size: 24px; margin-bottom: 15px; }
-    .control-group { margin-bottom: 15px; text-align: left; background: #f9f9fb; padding: 12px; border-radius: 8px; border: 1px solid #e1e1e8; }
-    .control-group label { display: block; font-weight: bold; margin-bottom: 5px; font-size: 14px; }
-    input, select, button { width: 100%; padding: 10px; font-size: 16px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; margin-top: 5px; }
-    button { cursor: pointer; font-weight: bold; color: #fff; border: none; }
-    .primary-btn { background: #007bff; }
-    .success-btn { background: #28a745; }
-    .danger-btn { background: #dc3545; }
-    .camera-container { position: relative; width: 100%; background: #000; border-radius: 8px; overflow: hidden; margin-top: 15px; }
-    video, canvas { width: 100%; display: block; }
-    canvas { position: absolute; left: 0; top: 0; }
-    .status-box { margin-top: 15px; padding: 10px; background: #e9ecef; border-radius: 6px; font-weight: bold; font-size: 14px; }
-    .gallery { display: flex; gap: 10px; overflow-x: auto; padding: 10px 0; }
-  </style>
 </head>
 <body>
 
   <div class="app-container">
-    <h1>🔍 AI探偵カメラ (スマホ操作)</h1>
-
-    <div class="control-group" style="border: 2px solid #007bff;">
-      <label for="pcIdInput">🔗 PC接続用ID:</label>
-      <div style="display: flex; gap: 8px;">
-        <input type="text" id="pcIdInput" placeholder="PC側のIDを入力">
-        <button onclick="connectToPC()" class="primary-btn" style="width: 100px;">接続</button>
-      </div>
-      <div id="connectionStatus" style="font-size: 12px; color: #666; margin-top: 5px;">ステータス: 未接続</div>
-    </div>
+    <h1>🔍 AI探偵カメラ</h1>
 
     <div class="control-group">
       <label for="targetObject">探すもの (英語):</label>
-      <input type="text" id="targetObject" value="cup" placeholder="例: cup, remote, cell phone">
-      <button onclick="sendStart()" class="success-btn" style="margin-top: 10px;">📷 遠隔カメラ起動 & 探索スタート</button>
-      <button onclick="sendStop()" class="danger-btn" style="margin-top: 8px; display:none;" id="stopButton">停止</button>
+      <div style="display: flex; gap: 5px;">
+        <input type="text" id="targetObject" value="cup" placeholder="例: cup, remote, cell phone" style="flex: 1;">
+        <button onclick="updateTarget()" style="padding: 0 15px; background: #007bff; color: #fff; border: none; font-weight: bold; border-radius: 4px; cursor: pointer;">決定</button>
+      </div>
     </div>
 
+    <!-- Lite0 と Lite2 を切り替えるプルダウン -->
     <div class="control-group">
       <label for="modelSelect">AIモデル切り替え:</label>
       <select id="modelSelect" onchange="changeModel()">
@@ -53,215 +31,25 @@
       </select>
     </div>
 
-    <!-- 💡 PCから送られてきた遠隔カメラの映像がここに映ります -->
     <div class="camera-container">
       <video id="video" autoplay muted playsinline></video>
       <canvas id="outputCanvas"></canvas>
     </div>
 
-    <div id="status" class="status-box">ステータス: PCと接続してください</div>
+    <div class="button-group">
+      <button id="startButton" class="primary-btn" onclick="startCamera()" disabled>AIモデルをロード中...</button>
+      <button id="stopButton" class="danger-btn" onclick="stopCamera()" style="display:none;">停止</button>
+    </div>
+
+    <div id="status" class="status-box">ステータス: AIモデルをロード中...</div>
 
     <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px;">
-      <h3 style="margin: 0; font-size: 16px;">📁 発見したアイテムの履歴</h3>
-      <button onclick="clearGallery()" style="padding: 5px 10px; background: #dc3545; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">履歴クリア</button>
+      <h3 style="margin: 0;">📁 発見したアイテムの履歴</h3>
+      <button onclick="clearGallery()" style="padding: 5px 10px; background: #dc3545; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">履歴をクリア</button>
     </div>
     <div id="imageGallery" class="gallery"></div>
   </div>
 
-  <script type="module">
-    import { ObjectDetector, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.2";
-
-    let objectDetector = undefined;
-    let webcamRunning = false;
-    let vision = undefined;
-    let currentSearchWord = "cup";
-    let lastVideoTime = -1;
-    let lastSaveTime = 0;
-
-    const video = document.getElementById("video");
-    const canvas = document.getElementById("outputCanvas");
-    const ctx = canvas.getContext("2d");
-    const status = document.getElementById("status");
-    const stopButton = document.getElementById("stopButton");
-    const connStatus = document.getElementById("connectionStatus");
-
-    let peer = new Peer();
-    let conn = null;
-
-    const modelPaths = {
-      lite0: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite",
-      lite2: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite2/float16/1/efficientdet_lite2.tflite"
-    };
-
-    async function initializeAI() {
-      try {
-        vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.2/wasm");
-        objectDetector = await ObjectDetector.createFromOptions(vision, {
-          baseOptions: { modelAssetPath: modelPaths.lite0, delegate: "GPU" },
-          scoreThreshold: 0.3,
-          runningMode: "VIDEO"
-        });
-      } catch (err) {
-        console.error(err);
-      }
-    }
-    initializeAI();
-
-    window.connectToPC = function() {
-      const pcId = document.getElementById("pcIdInput").value.trim();
-      if (!pcId) { alert("PCのIDを入力してください！"); return; }
-
-      connStatus.innerText = "ステータス: 接続中...";
-      conn = peer.connect(pcId);
-
-      conn.on('open', () => {
-        connStatus.innerText = "ステータス: 接続完了 ✅";
-        connStatus.style.color = "#28a745";
-        status.innerText = "ステータス: 準備完了。「探索スタート」を押してください";
-      });
-    };
-
-    // ★ PC側から送られてくる遠隔カメラの映像ストリームをスマホ側で受信して表示
-    peer.on('call', (call) => {
-      call.answer(); // 通話に応答
-      call.on('stream', (remoteStream) => {
-        video.srcObject = remoteStream;
-        webcamRunning = true;
-        stopButton.style.display = "block";
-        status.innerText = "ステータス: 遠隔カメラ映像を受信中...";
-        video.onloadeddata = () => { predictWebcam(); };
-      });
-    });
-
-    window.sendStart = function() {
-      if (!conn || !conn.open) { alert("先にPCと接続してください！"); return; }
-      currentSearchWord = document.getElementById("targetObject").value.trim().toLowerCase();
-      
-      // 自分のPeer IDをPCに送信して、カメラ映像を送ってもらう
-      conn.send({ 
-        action: 'start', 
-        keyword: currentSearchWord, 
-        smartphoneId: peer.id 
-      });
-
-      status.innerText = `ステータス: 遠隔カメラ起動中... (${currentSearchWord})`;
-    };
-
-    window.sendStop = function() {
-      if (conn) conn.send({ action: 'stop' });
-      webcamRunning = false;
-      if (video.srcObject) {
-        video.srcObject.getTracks().forEach(t => t.stop());
-      }
-      video.srcObject = null;
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      stopButton.style.display = "none";
-      status.innerText = "ステータス: 停止しました";
-    };
-
-    window.changeModel = async function() {
-      const selectedModel = document.getElementById("modelSelect").value;
-      try {
-        objectDetector = await ObjectDetector.createFromOptions(vision, {
-          baseOptions: { modelAssetPath: modelPaths[selectedModel], delegate: "GPU" },
-          scoreThreshold: 0.3,
-          runningMode: "VIDEO"
-        });
-      } catch (err) {
-        console.error(err);
-      }
-    };
-
-    window.clearGallery = function() {
-      document.getElementById("imageGallery").innerHTML = "";
-    };
-
-    // スマホ側で遠隔映像をリアルタイムAI推論
-    async function predictWebcam() {
-      if (!webcamRunning) return;
-
-      if (video.videoWidth > 0 && video.videoHeight > 0) {
-        const displayWidth = video.clientWidth;
-        const displayHeight = video.clientHeight;
-        if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
-          canvas.width = displayWidth;
-          canvas.height = displayHeight;
-        }
-      }
-
-      if (video.currentTime !== lastVideoTime) {
-        lastVideoTime = video.currentTime;
-        try {
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          let foundTarget = false;
-          const detections = objectDetector.detectForVideo(video, performance.now());
-
-          if (detections && detections.detections) {
-            const scaleX = canvas.width / video.videoWidth;
-            const scaleY = canvas.height / video.videoHeight;
-
-            for (let detection of detections.detections) {
-              const categoryName = detection.categories[0].categoryName.toLowerCase();
-              const score = Math.round(detection.categories[0].score * 100);
-
-              if (categoryName.includes(currentSearchWord)) {
-                foundTarget = true;
-                const bbox = detection.boundingBox;
-                const x = bbox.originX * scaleX;
-                const y = bbox.originY * scaleY;
-                const width = bbox.width * scaleX;
-                const height = bbox.height * scaleY;
-
-                ctx.strokeStyle = "#00ff00";
-                ctx.lineWidth = 4;
-                ctx.strokeRect(x, y, width, height);
-
-                ctx.fillStyle = "#00ff00";
-                ctx.font = "16px sans-serif";
-                ctx.fillText(`${categoryName} ${score}%`, x, y > 20 ? y - 5 : 20);
-
-                const now = Date.now();
-                if (now - lastSaveTime > 3000) {
-                  saveFoundImage(bbox);
-                  lastSaveTime = now;
-                }
-              }
-            }
-          }
-
-          if (foundTarget) {
-            status.innerText = `🎉 発見！ (${currentSearchWord})`;
-            status.style.color = "#00ff00";
-          } else {
-            status.innerText = `🔍 探索中... (${currentSearchWord})`;
-            status.style.color = "#aaa";
-          }
-        } catch (e) {
-          console.error(e);
-        }
-      }
-
-      if (webcamRunning) {
-        requestAnimationFrame(predictWebcam);
-      }
-    }
-
-    function saveFoundImage(bbox) {
-      const gallery = document.getElementById("imageGallery");
-      if (!gallery) return;
-      const tempCanvas = document.createElement("canvas");
-      tempCanvas.width = bbox.width;
-      tempCanvas.height = bbox.height;
-      tempCanvas.getContext("2d").drawImage(video, bbox.originX, bbox.originY, bbox.width, bbox.height, 0, 0, bbox.width, bbox.height);
-      const img = document.createElement("img");
-      img.src = tempCanvas.toDataURL("image/jpeg");
-      img.style.width = "80px";
-      img.style.height = "80px";
-      img.style.objectFit = "cover";
-      img.style.borderRadius = "8px";
-      img.style.border = "2px solid #00ff00";
-      gallery.prepend(img);
-    }
-  </script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>
