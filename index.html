@@ -4,9 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AI探偵カメラ - スマホリモコン</title>
-  <!-- MediaPipe Object Detection -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.2"></script>
-  <!-- PeerJSの読み込み -->
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <style>
     body { font-family: sans-serif; text-align: center; margin: 0; padding: 15px; background: #f4f4f9; color: #333; }
@@ -31,7 +29,6 @@
   <div class="app-container">
     <h1>🔍 AI探偵カメラ (スマホ操作)</h1>
 
-    <!-- ① PC接続用のID入力エリア -->
     <div class="control-group" style="border: 2px solid #007bff;">
       <label for="pcIdInput">🔗 PC接続用ID:</label>
       <div style="display: flex; gap: 8px;">
@@ -41,24 +38,22 @@
       <div id="connectionStatus" style="font-size: 12px; color: #666; margin-top: 5px;">ステータス: 未接続</div>
     </div>
 
-    <!-- ② 探すものの設定 -->
     <div class="control-group">
       <label for="targetObject">探すもの (英語):</label>
       <input type="text" id="targetObject" value="cup" placeholder="例: cup, remote, cell phone">
-      <button onclick="sendStart()" class="success-btn" style="margin-top: 10px;">📷 PCカメラ起動 & 探索スタート</button>
+      <button onclick="sendStart()" class="success-btn" style="margin-top: 10px;">📷 遠隔カメラ起動 & 探索スタート</button>
       <button onclick="sendStop()" class="danger-btn" style="margin-top: 8px; display:none;" id="stopButton">停止</button>
     </div>
 
-    <!-- ③ AIモデル切り替え -->
     <div class="control-group">
       <label for="modelSelect">AIモデル切り替え:</label>
-      <select id="modelSelect">
+      <select id="modelSelect" onchange="changeModel()">
         <option value="lite0">EfficientDet-Lite0 (高速・軽量)</option>
         <option value="lite2">EfficientDet-Lite2 (高精度)</option>
       </select>
     </div>
 
-    <!-- ④ カメラ映像＆検出枠表示エリア -->
+    <!-- 💡 PCから送られてきた遠隔カメラの映像がここに映ります -->
     <div class="camera-container">
       <video id="video" autoplay muted playsinline></video>
       <canvas id="outputCanvas"></canvas>
@@ -98,7 +93,6 @@
       lite2: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite2/float16/1/efficientdet_lite2.tflite"
     };
 
-    // 初期AIロード
     async function initializeAI() {
       try {
         vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.2/wasm");
@@ -113,7 +107,6 @@
     }
     initializeAI();
 
-    // PCへ接続する処理
     window.connectToPC = function() {
       const pcId = document.getElementById("pcIdInput").value.trim();
       if (!pcId) { alert("PCのIDを入力してください！"); return; }
@@ -128,9 +121,9 @@
       });
     };
 
-    // PCから送られてくる遠隔カメラ映像を受け取る
+    // ★ PC側から送られてくる遠隔カメラの映像ストリームをスマホ側で受信して表示
     peer.on('call', (call) => {
-      call.answer();
+      call.answer(); // 通話に応答
       call.on('stream', (remoteStream) => {
         video.srcObject = remoteStream;
         webcamRunning = true;
@@ -144,10 +137,13 @@
       if (!conn || !conn.open) { alert("先にPCと接続してください！"); return; }
       currentSearchWord = document.getElementById("targetObject").value.trim().toLowerCase();
       
-      // AIモデルのパスも選択されたものに変更
-      const selectedModel = document.getElementById("modelSelect").value;
-      // PCへスタート指示を送る
-      conn.send({ action: 'start', keyword: currentSearchWord });
+      // 自分のPeer IDをPCに送信して、カメラ映像を送ってもらう
+      conn.send({ 
+        action: 'start', 
+        keyword: currentSearchWord, 
+        smartphoneId: peer.id 
+      });
+
       status.innerText = `ステータス: 遠隔カメラ起動中... (${currentSearchWord})`;
     };
 
@@ -163,11 +159,24 @@
       status.innerText = "ステータス: 停止しました";
     };
 
+    window.changeModel = async function() {
+      const selectedModel = document.getElementById("modelSelect").value;
+      try {
+        objectDetector = await ObjectDetector.createFromOptions(vision, {
+          baseOptions: { modelAssetPath: modelPaths[selectedModel], delegate: "GPU" },
+          scoreThreshold: 0.3,
+          runningMode: "VIDEO"
+        });
+      } catch (err) {
+        console.error(err);
+      }
+    };
+
     window.clearGallery = function() {
       document.getElementById("imageGallery").innerHTML = "";
     };
 
-    // リアルタイムAI推論ループ
+    // スマホ側で遠隔映像をリアルタイムAI推論
     async function predictWebcam() {
       if (!webcamRunning) return;
 
