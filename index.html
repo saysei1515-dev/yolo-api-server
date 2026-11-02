@@ -3,16 +3,27 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI探偵カメラ（履歴クリア機能付き）</title>
+  <title>AI探偵カメラ（リモート操作対応）</title>
   <link rel="stylesheet" href="style.css">
 
-  <!-- MediaPipe Object Detection -->
+  <!-- MediaPipe & PeerJS -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.2"></script>
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 </head>
 <body>
 
   <div class="app-container">
     <h1>🔍 AI探偵カメラ</h1>
+
+    <!-- 🔗 PC接続用のID入力エリア（元のデザインに合わせたスタイル） -->
+    <div class="control-group" style="border: 2px solid #007bff; background: #f0f7ff;">
+      <label for="pcIdInput" style="color: #007bff;">🔗 PC接続用ID:</label>
+      <div style="display: flex; gap: 5px;">
+        <input type="text" id="pcIdInput" placeholder="PC側のIDを入力" style="flex: 1;">
+        <button onclick="connectToPC()" style="padding: 0 15px; background: #007bff; color: #fff; border: none; font-weight: bold; border-radius: 4px; cursor: pointer;">接続</button>
+      </div>
+      <div id="connectionStatus" style="font-size: 12px; color: #666; margin-top: 5px;">ステータス: 未接続</div>
+    </div>
 
     <div class="control-group">
       <label for="targetObject">探すもの (英語):</label>
@@ -37,7 +48,8 @@
     </div>
 
     <div class="button-group">
-      <button id="startButton" class="primary-btn" onclick="startCamera()" disabled>AIモデルをロード中...</button>
+      <!-- スタートボタン：最初はPC未接続なので無効化 -->
+      <button id="startButton" class="primary-btn" onclick="startCamera()" disabled>PCと接続してください</button>
       <button id="stopButton" class="danger-btn" onclick="stopCamera()" style="display:none;">停止</button>
     </div>
 
@@ -45,7 +57,7 @@
 
     <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px;">
       <h3 style="margin: 0;">📁 発見したアイテムの履歴</h3>
-      <button onclick="clearGallery()" style="padding: 5px 10px; background: #dc3545; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">履歴をクリア</button>
+      <button onclick="clearGallery()" style="padding: 5px 10px; background: #dc3545; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">履歴クリア</button>
     </div>
     <div id="imageGallery" class="gallery"></div>
   </div>
