@@ -69,16 +69,10 @@ window.switchTab = function(tabName) {
   } else {
     document.querySelector('.tab-menu button:nth-child(2)').classList.add('active');
     document.getElementById('registerTab').classList.add('active');
-    
-    // 登録タブに切り替えた際、現在の映像ストリームを登録用videoにも共有
-    const regVideo = document.getElementById("regVideo");
-    if (video.srcObject && !regVideo.srcObject) {
-      regVideo.srcObject = video.srcObject;
-    }
   }
 };
 
-// PCへ接続する処理
+// PCへ接続する処理（探索モード用）
 window.connectToPC = function() {
   const pcId = document.getElementById("pcIdInput").value.trim();
   if (!pcId) {
@@ -110,7 +104,6 @@ peer.on('call', (call) => {
   call.answer();
   call.on('stream', (remoteStream) => {
     video.srcObject = remoteStream;
-    document.getElementById("regVideo").srcObject = remoteStream;
     webcamRunning = true;
     startButton.style.display = "none";
     stopButton.style.display = "block";
@@ -173,7 +166,6 @@ window.stopCamera = function() {
   const stream = video.srcObject;
   if (stream) stream.getTracks().forEach(track => track.stop());
   video.srcObject = null;
-  document.getElementById("regVideo").srcObject = null;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   stopButton.style.display = "none";
@@ -182,33 +174,21 @@ window.stopCamera = function() {
   status.style.color = "#aaa";
 };
 
-// 📦 手動クロップ＆物体登録機能
-let croppedDataUrl = null;
-window.captureForCrop = function() {
+// ================= 物体登録用：スマホカメラ起動 ＆ ガイド内切り抜き =================
+window.startRegCamera = async function() {
   const regVideo = document.getElementById("regVideo");
-  if (!regVideo.srcObject) {
-    alert("先にPCカメラを起動してください！");
-    return;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment' },
+      audio: false
+    });
+    regVideo.srcObject = stream;
+    document.getElementById("regStatus").innerText = "ステータス: スマホカメラ起動中。ガイド枠にアイテムを合わせてください";
+    document.getElementById("regStatus").style.color = "#00ff00";
+  } catch (err) {
+    console.error(err);
+    alert("スマホカメラの起動に失敗しました。権限を確認してください。");
   }
-  const regCanvas = document.getElementById("regCanvas");
-  regCanvas.width = regVideo.clientWidth;
-  regCanvas.height = regVideo.clientHeight;
-  const regCtx = regCanvas.getContext("2d");
-
-  // 中央部分を切り抜くサンプル（手動クロップ枠）
-  const cropWidth = 150;
-  const cropHeight = 150;
-  const cropX = (regVideo.videoWidth - cropWidth) / 2;
-  const cropY = (regVideo.videoHeight - cropHeight) / 2;
-
-  regCtx.drawImage(regVideo, 0, 0, regVideo.videoWidth, regVideo.videoHeight, 0, 0, regCanvas.width, regCanvas.height);
-  
-  // 枠線の描画
-  regCtx.strokeStyle = "#ffc107";
-  regCtx.lineWidth = 3;
-  regCtx.strokeRect(regCanvas.width / 2 - 75, regCanvas.height / 2 - 75, 150, 150);
-
-  document.getElementById("regStatus").innerText = "ステータス: 中央の枠内を切り取りました。「この範囲を登録する」を押してください";
 };
 
 window.saveRegisteredItem = function() {
@@ -219,12 +199,37 @@ window.saveRegisteredItem = function() {
   }
 
   const regVideo = document.getElementById("regVideo");
-  if (!regVideo.srcObject) { alert("カメラが起動していません"); return; }
+  if (!regVideo.srcObject) {
+    alert("先に「スマホの登録カメラを起動」してください！");
+    return;
+  }
+
+  // ガイド枠（画面中央の160x160エリア）に合わせてクロップ計算
+  const videoWidth = regVideo.videoWidth;
+  const videoHeight = regVideo.videoHeight;
+  const displayWidth = regVideo.clientWidth;
+  const displayHeight = regVideo.clientHeight;
+
+  const scaleX = videoWidth / displayWidth;
+  const scaleY = videoHeight / displayHeight;
+
+  // ガイド枠のピクセルサイズ・位置
+  const guideSize = 160;
+  const cropW = guideSize * scaleX;
+  const cropH = guideSize * scaleY;
+  const cropX = (videoWidth - cropW) / 2;
+  const cropY = (videoHeight - cropH) / 2;
 
   const tempCanvas = document.createElement("canvas");
-  tempCanvas.width = 100;
-  tempCanvas.height = 100;
-  tempCanvas.getContext("2d").drawImage(regVideo, 0, 0, tempCanvas.width, tempCanvas.height);
+  tempCanvas.width = guideSize;
+  tempCanvas.height = guideSize;
+  const tempCtx = tempCanvas.getContext("2d");
+
+  tempCtx.drawImage(
+    regVideo,
+    cropX, cropY, cropW, cropH,
+    0, 0, guideSize, guideSize
+  );
 
   const img = document.createElement("img");
   img.src = tempCanvas.toDataURL("image/jpeg");
@@ -240,10 +245,11 @@ window.saveRegisteredItem = function() {
   const label = document.createElement("div");
   label.innerText = name;
   label.style.fontSize = "10px";
+  label.style.color = "#fff";
   container.appendChild(label);
 
   document.getElementById("registeredList").appendChild(container);
-  document.getElementById("regStatus").innerText = `✅ 「${name}」を登録しました！`;
+  document.getElementById("regStatus").innerText = `✅ 「${name}」をガイド内から登録しました！`;
   document.getElementById("registerName").value = "";
 };
 
@@ -280,7 +286,7 @@ window.clearGallery = function() {
   }
 };
 
-// リアルタイム推論ループ
+// リアルタイム推論ループ（探索モード）
 async function predictWebcam() {
   if (!webcamRunning) return;
 
@@ -341,7 +347,7 @@ async function predictWebcam() {
       }
 
       if (foundTarget) {
-        status.innerText = `🎉 発見！ (${currentSearchWord})`;
+        status.innerText = `🎉 발견！ (${currentSearchWord})`;
         status.style.color = "#00ff00";
       } else {
         if (detectedNames.length > 0) {
