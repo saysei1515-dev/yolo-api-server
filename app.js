@@ -4,9 +4,10 @@ let objectDetector = undefined;
 let runningMode = "VIDEO";
 let webcamRunning = false;
 let vision = undefined;
+let mobilenetModel = undefined;
 
-// 古典的画像処理用データベース（登録されたオブジェクトのカラー特徴量・局所パターンを保持）
-let registeredTemplates = []; 
+// 特徴量蓄積用データベース
+let registeredEmbeddings = []; 
 let useCustomModel = false;
 let activeCustomName = "";
 let currentAspect = 'square'; // ガイド枠の比率
@@ -36,28 +37,36 @@ const modelPaths = {
   lite2: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite2/float16/1/efficientdet_lite2.tflite"
 };
 
-// 初期AIロード（標準モデル用）
+// 初期AIロード
 async function initializeAI() {
-  status.innerText = "ステータス: システム準備完了（AI不使用マッチング待機中）";
-  status.style.color = "#007bff";
+  status.innerText = "ステータス: AIモデルをロード中...";
+  status.style.color = "#ffc107";
 
   try {
     vision = await FilesetResolver.forVisionTasks(
       "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.2/wasm"
     );
     const selectedModel = document.getElementById("modelSelect").value;
-    if (selectedModel !== "custom") {
-      objectDetector = await ObjectDetector.createFromOptions(vision, {
-        baseOptions: {
-          modelAssetPath: modelPaths[selectedModel],
-          delegate: "GPU"
-        },
-        scoreThreshold: 0.3,
-        runningMode: runningMode
-      });
-    }
+    objectDetector = await ObjectDetector.createFromOptions(vision, {
+      baseOptions: {
+        modelAssetPath: modelPaths[selectedModel],
+        delegate: "GPU"
+      },
+      scoreThreshold: 0.3,
+      runningMode: runningMode
+    });
   } catch (err) {
     console.warn("MediaPipeのロードに失敗しました:", err);
+  }
+
+  try {
+    mobilenetModel = await mobilenet.load();
+    status.innerText = "ステータス: PCのIDを入力して接続してください";
+    status.style.color = "#007bff";
+  } catch (err) {
+    console.error(err);
+    status.innerText = "エラー: AIのロードに失敗しました";
+    status.style.color = "#ff4444";
   }
 }
 
@@ -112,13 +121,13 @@ peer.on('call', (call) => {
 window.changeModel = async function() {
   const selectedModel = document.getElementById("modelSelect").value;
   if (selectedModel === "custom") {
-    if (registeredTemplates.length === 0) {
-      alert("カスタムテンプレートがありません。「物体登録モード」から登録してください。");
+    if (registeredEmbeddings.length === 0) {
+      alert("カスタムモデルがありません。「物体登録モード」から登録してください。");
       document.getElementById("modelSelect").value = "lite0";
       return;
     }
     useCustomModel = true;
-    status.innerText = `ステータス: 古典画像処理マッチング(${activeCustomName})で探索中`;
+    status.innerText = `ステータス: AIカスタムモデル(${activeCustomName})で探索中`;
   } else {
     useCustomModel = false;
     if (!vision) return;
@@ -205,9 +214,9 @@ window.setAspectRatio = function(type) {
 };
 
 window.clearCustomModel = function() {
-  if (!confirm("登録したテンプレートデータを消去しますか？")) return;
+  if (!confirm("登録した物体データとカスタムモデルを消去しますか？")) return;
 
-  registeredTemplates = [];
+  registeredEmbeddings = [];
   useCustomModel = false;
   activeCustomName = "";
 
@@ -227,7 +236,7 @@ window.clearCustomModel = function() {
   modelSelect.value = "lite0";
 
   document.getElementById("registerName").value = "";
-  document.getElementById("regStatus").innerText = "ステータス: すべてのデータを消去しました";
+  document.getElementById("regStatus").innerText = "ステータス: すべての登録データを消去しました";
   document.getElementById("regStatus").style.color = "#ff4444";
 };
 
@@ -241,8 +250,8 @@ function cropGuideArea() {
   if (!regVideo || !regVideo.srcObject || !guideBox) return null;
 
   const tempCanvas = document.createElement("canvas");
-  tempCanvas.width = 100;
-  tempCanvas.height = 100;
+  tempCanvas.width = 224;
+  tempCanvas.height = 224;
   const tempCtx = tempCanvas.getContext("2d");
 
   const vW = regVideo.videoWidth;
@@ -263,7 +272,7 @@ function cropGuideArea() {
   const cX = (gRect.left - vRect.left) * sX;
   const cY = (gRect.top - vRect.top) * sY;
 
-  tempCtx.drawImage(regVideo, cX, cY, cW, cH, 0, 0, 100, 100);
+  tempCtx.drawImage(regVideo, cX, cY, cW, cH, 0, 0, 224, 224);
   return tempCanvas;
 }
 
@@ -291,57 +300,31 @@ window.captureBackground = function() {
   document.getElementById("bgThumbnails").appendChild(img);
 };
 
-// 📊 画像からカラーヒストグラム（色彩比率）を算出する関数
-function extractColorHistogram(canvasEl) {
-  const ctx = canvasEl.getContext("2d");
-  const imgData = ctx.getImageData(0, 0, canvasEl.width, canvasEl.height).data;
-  
-  // 簡易RGBヒストグラム（16段階x16段階x16段階 = 4096ビン）
-  const hist = new Array(4096).fill(0);
-  let totalPixels = 0;
-
-  for (let i = 0; i < imgData.length; i += 4) {
-    const r = Math.floor(imgData[i] / 16);
-    const g = Math.floor(imgData[i+1] / 16);
-    const b = Math.floor(imgData[i+2] / 16);
-    const bin = (r * 256) + (g * 16) + b;
-    hist[bin]++;
-    totalPixels++;
-  }
-
-  // 正規化
-  return hist.map(val => val / totalPixels);
-}
-
-// 2つのヒストグラムの類似度（Bhattacharyya係数または相関）を計算
-function compareHistograms(hist1, hist2) {
-  let similarity = 0;
-  for (let i = 0; i < hist1.length; i++) {
-    similarity += Math.min(hist1[i], hist2[i]);
-  }
-  return similarity; // 0.0 ~ 1.0
-}
-
-// ⚡ 登録処理（AI不使用・カラー特徴量の蓄積）
+// ⚡ AI特徴量ベクトル抽出・登録処理
 window.trainAndRegister = async function() {
   const name = document.getElementById("registerName").value.trim().toLowerCase();
   if (!name) { alert("登録する物体名を入力してください！"); return; }
   if (capturedObjects.length === 0) {
-    alert("物体画像を1枚以上撮影してください！");
+    alert("物体（クラス0）を1枚以上撮影してください！");
+    return;
+  }
+  if (!mobilenetModel) {
+    alert("MobileNetモデルがまだロードされていません。少し待ってから再度お試しください。");
     return;
   }
 
-  document.getElementById("regStatus").innerText = "📊 画像処理テンプレートを構築中...";
+  document.getElementById("regStatus").innerText = "⚡ AI特徴量を解析・登録中...";
   document.getElementById("regStatus").style.color = "#ffc107";
 
   try {
-    registeredTemplates = [];
+    registeredEmbeddings = [];
 
+    // 物体画像の特徴量を登録
     for (let objCanvas of capturedObjects) {
-      const histogram = extractColorHistogram(objCanvas);
-      registeredTemplates.push({
-        histogram: histogram,
-        canvas: objCanvas
+      tf.tidy(() => {
+        const tensor = tf.browser.fromPixels(objCanvas).toFloat().expandDims(0);
+        const embedding = mobilenetModel.infer(tensor, true);
+        registeredEmbeddings.push(Array.from(embedding.dataSync()));
       });
     }
 
@@ -349,14 +332,14 @@ window.trainAndRegister = async function() {
 
     const modelSelect = document.getElementById("modelSelect");
     if (!document.querySelector('#modelSelect option[value="custom"]')) {
-      modelSelect.innerHTML += `<option value="custom">古典画像処理: ${name}</option>`;
+      modelSelect.innerHTML += `<option value="custom">AIカスタム: ${name}</option>`;
     } else {
-      document.querySelector('#modelSelect option[value="custom"]').innerText = `古典画像処理: ${name}`;
+      document.querySelector('#modelSelect option[value="custom"]').innerText = `AIカスタム: ${name}`;
     }
     modelSelect.value = "custom";
     useCustomModel = true;
 
-    document.getElementById("regStatus").innerText = `🎉 「${name}」の登録が完了しました！`;
+    document.getElementById("regStatus").innerText = `🎉 「${name}」のAI登録が完了しました！`;
     document.getElementById("regStatus").style.color = "#00ff00";
 
     const registeredList = document.getElementById("registeredList");
@@ -394,7 +377,7 @@ window.trainAndRegister = async function() {
     document.getElementById("objThumbnails").innerHTML = "";
     document.getElementById("bgThumbnails").innerHTML = "";
 
-    alert(`「${name}」のテンプレート登録が完了しました！背景を無視して純粋な色彩一致で検知します。`);
+    alert(`「${name}」の登録が完了しました！`);
 
   } catch (err) {
     console.error(err);
@@ -402,7 +385,19 @@ window.trainAndRegister = async function() {
   }
 };
 
-// ================= リアルタイム推論ループ（2段階ROIマッチング・AI不使用） =================
+function calculateCosineSimilarity(vecA, vecB) {
+  let dotProduct = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < vecA.length; i++) {
+    dotProduct += vecA[i] * vecB[i];
+    normA += vecA[i] * vecA[i];
+    normB += vecB[i] * vecB[i];
+  }
+  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+// ================= リアルタイム推論ループ（中央エリア限定 × AI特徴量マッチング） =================
 async function predictWebcam() {
   if (!webcamRunning) return;
 
@@ -421,7 +416,7 @@ async function predictWebcam() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       let foundTarget = false;
 
-      if (useCustomModel && registeredTemplates.length > 0) {
+      if (useCustomModel && registeredEmbeddings.length > 0 && mobilenetModel) {
         
         // 🛡️【安全フィルター】真っ暗な状態を防止
         const checkCanvas = document.createElement("canvas");
@@ -439,41 +434,45 @@ async function predictWebcam() {
 
         if (avgBrightness > 25) {
           
-          // 🔍【第1段階：ROI抽出】画面中央エリア（物体が置かれる想定位置）を切り出し
-          const roiCanvas = document.createElement("canvas");
-          roiCanvas.width = 100;
-          roiCanvas.height = 100;
-          const roiCtx = roiCanvas.getContext("2d");
+          // 🎯【中央エリア限定クロップ】背景の白い机を排除し、物体が置かれる中央部分だけをAIに渡す
+          const cropCanvas = document.createElement("canvas");
+          cropCanvas.width = 224;
+          cropCanvas.height = 224;
+          const cropCtx = cropCanvas.getContext("2d");
 
           const vW = video.videoWidth;
           const vH = video.videoHeight;
-          const sW = vW * 0.5; // 中央50%
-          const sH = vH * 0.5;
-          const sX = vW * 0.25;
-          const sY = vH * 0.25;
+          const sW = vW * 0.6;
+          const sH = vH * 0.6;
+          const sX = vW * 0.2;
+          const sY = vH * 0.2;
 
-          roiCtx.drawImage(video, sX, sY, sW, sH, 0, 0, 100, 100);
+          cropCtx.drawImage(video, sX, sY, sW, sH, 0, 0, 224, 224);
 
-          // 📊【第2段階：カラーヒストグラムマッチング】色彩の一致度を数学的に評価
-          const currentHist = extractColorHistogram(roiCanvas);
-          
-          let maxScore = 0;
-          for (let tmpl of registeredTemplates) {
-            const score = compareHistograms(currentHist, tmpl.histogram);
-            if (score > maxScore) {
-              maxScore = score;
+          // AI（MobileNet）による特徴量抽出
+          const currentEmbedding = tf.tidy(() => {
+            const tensor = tf.browser.fromPixels(cropCanvas).toFloat().expandDims(0);
+            const embedding = mobilenetModel.infer(tensor, true);
+            return Array.from(embedding.dataSync());
+          });
+
+          // コサイン類似度を計算
+          let maxSimilarity = 0;
+          for (let regEmb of registeredEmbeddings) {
+            const similarity = calculateCosineSimilarity(currentEmbedding, regEmb);
+            if (similarity > maxSimilarity) {
+              maxSimilarity = similarity;
             }
           }
 
-          // 🎯 一致度が閾値（0.65以上）を超えたら発見！
-          // （色彩バランスが完全に一致したときのみ反応するため、白い机の背景では絶対に誤作動しません）
-          if (maxScore >= 0.65) {
+          // 🎯 閾値（0.75以上）を超えたら発見！
+          if (maxSimilarity >= 0.75) {
             foundTarget = true;
 
-            const boxX = canvas.width * 0.25;
-            const boxY = canvas.height * 0.25;
-            const boxW = canvas.width * 0.5;
-            const boxH = canvas.height * 0.5;
+            const boxX = canvas.width * 0.2;
+            const boxY = canvas.height * 0.2;
+            const boxW = canvas.width * 0.6;
+            const boxH = canvas.height * 0.6;
 
             // 🟢 発見した物体だけを緑の枠でシンプルに囲む
             ctx.strokeStyle = "#00ff00";
@@ -485,7 +484,7 @@ async function predictWebcam() {
 
             ctx.fillStyle = "#00ff00";
             ctx.font = "bold 16px sans-serif";
-            ctx.fillText(`✨ ${activeCustomName} (${Math.round(maxScore * 100)}%)`, boxX + 10, boxY + 23);
+            ctx.fillText(`✨ ${activeCustomName} (${Math.round(maxSimilarity * 100)}%)`, boxX + 10, boxY + 23);
 
             const now = Date.now();
             if (now - lastSaveTime > 3000) {
