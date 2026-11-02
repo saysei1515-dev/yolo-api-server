@@ -20,6 +20,7 @@ let currentSearchWord = "cup";
 let lastSaveTime = 0; 
 let useCustomModel = false;
 let activeCustomName = "";
+let currentAspect = 'square'; // ガイド枠の比率
 
 // PeerJS初期化
 const peer = new Peer();
@@ -52,10 +53,13 @@ async function initializeAI() {
       scoreThreshold: 0.3,
       runningMode: runningMode
     });
+  } catch (err) {
+    console.warn("MediaPipeのロードに失敗しました:", err);
+  }
 
+  try {
     // 特徴量抽出用のMobileNetをロード
     mobilenetModel = await mobilenet.load();
-
     status.innerText = "ステータス: PCのIDを入力して接続してください";
     status.style.color = "#007bff";
   } catch (err) {
@@ -125,6 +129,7 @@ window.changeModel = async function() {
     status.innerText = `ステータス: カスタムモデル(${activeCustomName})で探索中`;
   } else {
     useCustomModel = false;
+    if (!vision) return;
     try {
       objectDetector = await ObjectDetector.createFromOptions(vision, {
         baseOptions: { modelAssetPath: modelPaths[selectedModel], delegate: "GPU" },
@@ -179,7 +184,6 @@ window.startRegCamera = async function() {
   } catch (err) { alert("カメラ起動失敗: " + err.message); }
 };
 
-// 🛑 登録用カメラを停止して軽量化する関数
 window.stopRegCamera = function() {
   const regVideo = document.getElementById("regVideo");
   if (regVideo && regVideo.srcObject) {
@@ -191,7 +195,24 @@ window.stopRegCamera = function() {
   }
 };
 
-// 🗑️ 登録した物体・モデルをすべて消去・リセットする関数
+// 📌 ガイド枠の縦横比率を変更する関数
+window.setAspectRatio = function(type) {
+  currentAspect = type;
+  const guideBox = document.getElementById("regGuideBox");
+  if (!guideBox) return;
+
+  if (type === 'square') {
+    guideBox.style.width = '160px';
+    guideBox.style.height = '160px';
+  } else if (type === 'landscape') {
+    guideBox.style.width = '240px';
+    guideBox.style.height = '120px'; // 横長
+  } else if (type === 'portrait') {
+    guideBox.style.width = '120px';
+    guideBox.style.height = '240px'; // 縦長
+  }
+};
+
 window.clearCustomModel = function() {
   if (!confirm("登録した物体データとカスタムモデルを消去しますか？")) return;
 
@@ -224,10 +245,15 @@ window.clearCustomModel = function() {
   document.getElementById("regStatus").style.color = "#ff4444";
 };
 
-// ガイド枠（中央160x160）の部分を正確にクロップして224x224（MobileNet用）にする関数
+window.clearGallery = function() {
+  document.getElementById("imageGallery").innerHTML = "";
+};
+
+// ガイド枠（可変比率）の部分を正確にクロップして224x224（MobileNet用）にする関数
 function cropGuideArea() {
   const regVideo = document.getElementById("regVideo");
-  if (!regVideo.srcObject) return null;
+  const guideBox = document.getElementById("regGuideBox");
+  if (!regVideo || !regVideo.srcObject || !guideBox) return null;
 
   const tempCanvas = document.createElement("canvas");
   tempCanvas.width = 224;
@@ -239,19 +265,23 @@ function cropGuideArea() {
   const dW = regVideo.clientWidth;
   const dH = regVideo.clientHeight;
 
+  if (vW === 0 || vH === 0) return null;
+
   const sX = vW / dW;
   const sY = vH / dH;
-  const guideSize = 160;
-  const cW = guideSize * sX;
-  const cH = guideSize * sY;
-  const cX = (vW - cW) / 2;
-  const cY = (vH - cH) / 2;
+
+  const gRect = guideBox.getBoundingClientRect();
+  const vRect = regVideo.getBoundingClientRect();
+
+  const cW = gRect.width * sX;
+  const cH = gRect.height * sY;
+  const cX = (gRect.left - vRect.left) * sX;
+  const cY = (gRect.top - vRect.top) * sY;
 
   tempCtx.drawImage(regVideo, cX, cY, cW, cH, 0, 0, 224, 224);
   return tempCanvas;
 }
 
-// 物体（クラス0）撮影
 window.captureObject = function() {
   const canvas = cropGuideArea();
   if (!canvas) { alert("先にカメラを起動してください"); return; }
@@ -264,7 +294,6 @@ window.captureObject = function() {
   document.getElementById("objThumbnails").appendChild(img);
 };
 
-// 背景（クラス1）撮影
 window.captureBackground = function() {
   const canvas = cropGuideArea();
   if (!canvas) { alert("先にカメラを起動してください"); return; }
@@ -277,7 +306,7 @@ window.captureBackground = function() {
   document.getElementById("bgThumbnails").appendChild(img);
 };
 
-// ⚡ 撮影した複数枚の画像からブラウザ上でAI学習を実行
+// ⚡ エポック数30 ＆ 2層Dense層（32➡️16）でパワーアップしたAI学習
 window.trainAndRegister = async function() {
   const name = document.getElementById("registerName").value.trim().toLowerCase();
   if (!name) { alert("登録する物体名を入力してください！"); return; }
@@ -285,15 +314,26 @@ window.trainAndRegister = async function() {
     alert("物体（クラス0）と背景（クラス1）をそれぞれ1枚以上撮影してください！");
     return;
   }
+  if (!mobilenetModel) {
+    alert("MobileNetモデルがまだロードされていません。少し待ってから再度お試しください。");
+    return;
+  }
 
-  document.getElementById("regStatus").innerText = "⚡ AI学習中... しばらくお待ちください";
+  document.getElementById("regStatus").innerText = "⚡ パワーアップAI学習中 (Epochs: 30)... しばらくお待ちください";
   document.getElementById("regStatus").style.color = "#ffc107";
 
   try {
+    // 隠れ層を2層化（32 ➡️ 16）したリッチな分類モデル
     customClassifier = tf.sequential();
-    customClassifier.add(tf.layers.dense({ units: 16, activation: 'relu', inputShape: [1024] }));
+    customClassifier.add(tf.layers.dense({ units: 32, activation: 'relu', inputShape: [1024] }));
+    customClassifier.add(tf.layers.dense({ units: 16, activation: 'relu' }));
     customClassifier.add(tf.layers.dense({ units: 2, activation: 'softmax' })); // [背景, 物体]
-    customClassifier.compile({ optimizer: tf.train.adam(0.0001), loss: 'categoricalCrossentropy', metrics: ['accuracy'] });
+    
+    customClassifier.compile({ 
+      optimizer: tf.train.adam(0.0001), 
+      loss: 'categoricalCrossentropy', 
+      metrics: ['accuracy'] 
+    });
 
     let inputs = [];
     let labels = [];
@@ -317,8 +357,9 @@ window.trainAndRegister = async function() {
     const xs = tf.concat(inputs);
     const ys = tf.tensor2d(labels);
 
+    // エポック数を30に設定してじっくり学習
     await customClassifier.fit(xs, ys, {
-      epochs: 15,
+      epochs: 30,
       shuffle: true
     });
 
@@ -336,7 +377,7 @@ window.trainAndRegister = async function() {
     modelSelect.value = "custom";
     useCustomModel = true;
 
-    document.getElementById("regStatus").innerText = `🎉 「${name}」のAI学習が完了しました！探索モードで使えます。`;
+    document.getElementById("regStatus").innerText = `🎉 「${name}」のパワーアップ学習が完了しました！探索モードで使えます。`;
     document.getElementById("regStatus").style.color = "#00ff00";
 
     const registeredList = document.getElementById("registeredList");
@@ -395,7 +436,7 @@ async function predictWebcam() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       let foundTarget = false;
 
-      if (useCustomModel && customClassifier) {
+      if (useCustomModel && customClassifier && mobilenetModel) {
         const tensor = tf.browser.fromPixels(video).toFloat().expandDims(0);
         const embedding = mobilenetModel.infer(tensor, true);
         const prediction = customClassifier.predict(embedding);
@@ -405,7 +446,8 @@ async function predictWebcam() {
         embedding.dispose();
         prediction.dispose();
 
-        if (probabilities[1] > 0.8) {
+        // 閾値 0.3 で判定
+        if (probabilities[1] > 0.3) {
           foundTarget = true;
           ctx.strokeStyle = "#00ff00";
           ctx.lineWidth = 4;
@@ -413,6 +455,12 @@ async function predictWebcam() {
           ctx.fillStyle = "#00ff00";
           ctx.font = "18px sans-serif";
           ctx.fillText(`✨ ${activeCustomName} (${Math.round(probabilities[1] * 100)}%)`, 50, 70);
+
+          const now = Date.now();
+          if (now - lastSaveTime > 3000) {
+            saveFoundCustomImage();
+            lastSaveTime = now;
+          }
         }
       } else if (objectDetector) {
         const detections = objectDetector.detectForVideo(video, performance.now());
@@ -476,6 +524,14 @@ function saveFoundImage(bbox) {
   gallery.prepend(img);
 }
 
-window.clearGallery = function() {
-  document.getElementById("imageGallery").innerHTML = "";
-};
+function saveFoundCustomImage() {
+  const gallery = document.getElementById("imageGallery");
+  if (!gallery) return;
+  const tempCanvas = document.createElement("canvas");
+  tempCanvas.width = video.videoWidth; tempCanvas.height = video.videoHeight;
+  tempCanvas.getContext("2d").drawImage(video, 0, 0);
+  const img = document.createElement("img");
+  img.src = tempCanvas.toDataURL("image/jpeg");
+  img.style.width = "80px"; img.style.height = "80px"; img.style.objectFit = "cover"; img.style.borderRadius = "8px"; img.style.border = "2px solid #00ff00";
+  gallery.prepend(img);
+}
