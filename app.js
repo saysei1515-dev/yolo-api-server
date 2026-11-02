@@ -4,6 +4,8 @@ let objectDetector = undefined;
 let runningMode = "VIDEO";
 let webcamRunning = false;
 let vision = undefined;
+let mobilenetModel = undefined;
+let customClassifier = null; // 独自学習モデル
 
 const video = document.getElementById("video");
 const canvas = document.getElementById("outputCanvas");
@@ -16,13 +18,16 @@ const connStatus = document.getElementById("connectionStatus");
 let lastVideoTime = -1;
 let currentSearchWord = "cup";
 let lastSaveTime = 0; 
-
-// 登録されたアイテムを保存する配列
-let registeredItems = [];
+let useCustomModel = false;
+let activeCustomName = "";
 
 // PeerJS初期化
 const peer = new Peer();
 let conn = null;
+
+// 撮影データ一時保存用配列
+let capturedObjects = [];
+let capturedBackgrounds = [];
 
 const modelPaths = {
   lite0: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite",
@@ -35,11 +40,9 @@ async function initializeAI() {
   status.style.color = "#ffc107";
 
   try {
-    if (!vision) {
-      vision = await FilesetResolver.forVisionTasks(
-        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.2/wasm"
-      );
-    }
+    vision = await FilesetResolver.forVisionTasks(
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.2/wasm"
+    );
     const selectedModel = document.getElementById("modelSelect").value;
     objectDetector = await ObjectDetector.createFromOptions(vision, {
       baseOptions: {
@@ -49,6 +52,9 @@ async function initializeAI() {
       scoreThreshold: 0.3,
       runningMode: runningMode
     });
+
+    // 特徴量抽出用のMobileNetをロード
+    mobilenetModel = await mobilenet.load();
 
     status.innerText = "ステータス: PCのIDを入力して接続してください";
     status.style.color = "#007bff";
@@ -109,13 +115,24 @@ peer.on('call', (call) => {
 // モデル切り替え
 window.changeModel = async function() {
   const selectedModel = document.getElementById("modelSelect").value;
-  try {
-    objectDetector = await ObjectDetector.createFromOptions(vision, {
-      baseOptions: { modelAssetPath: modelPaths[selectedModel], delegate: "GPU" },
-      scoreThreshold: 0.3,
-      runningMode: runningMode
-    });
-  } catch (err) { console.error(err); }
+  if (selectedModel === "custom") {
+    if (!customClassifier) {
+      alert("カスタムモデルがありません。「物体登録モード」から学習させてください。");
+      document.getElementById("modelSelect").value = "lite0";
+      return;
+    }
+    useCustomModel = true;
+    status.innerText = `ステータス: カスタムモデル(${activeCustomName})で探索中`;
+  } else {
+    useCustomModel = false;
+    try {
+      objectDetector = await ObjectDetector.createFromOptions(vision, {
+        baseOptions: { modelAssetPath: modelPaths[selectedModel], delegate: "GPU" },
+        scoreThreshold: 0.3,
+        runningMode: runningMode
+      });
+    } catch (err) { console.error(err); }
+  }
 };
 
 window.updateTarget = function() {
@@ -126,9 +143,10 @@ window.updateTarget = function() {
   status.style.color = "#00ff00";
 };
 
-// 登録したアイテムをクリックしたときに一発で探索ワードにセットする関数
-window.selectSearchTarget = function(name) {
+window.selectCustomTarget = function(name) {
   document.getElementById("targetObject").value = name;
+  document.getElementById("modelSelect").value = "custom";
+  window.changeModel();
   window.updateTarget();
   window.switchTab('search');
 };
@@ -151,67 +169,171 @@ window.stopCamera = function() {
   status.innerText = "ステータス: 停止しました";
 };
 
-// ================= シンプル登録ページ処理 =================
+// ================= 物体登録ページ ＆ ガイド内撮影処理 =================
 window.startRegCamera = async function() {
   const regVideo = document.getElementById("regVideo");
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
     regVideo.srcObject = stream;
-    document.getElementById("regStatus").innerText = "ステータス: スマホカメラ起動中。アイテムを写してください";
+    document.getElementById("regStatus").innerText = "ステータス: カメラ起動中。ガイド枠に物体を合わせて撮影してください";
   } catch (err) { alert("カメラ起動失敗: " + err.message); }
 };
 
-window.registerItemDirectly = function() {
-  const name = document.getElementById("registerName").value.trim().toLowerCase();
-  if (!name) { alert("登録するアイテム名を入力してください！"); return; }
-
+// ガイド枠（中央160x160）の部分を正確にクロップして224x224（MobileNet用）にする関数
+function cropGuideArea() {
   const regVideo = document.getElementById("regVideo");
-  if (!regVideo.srcObject) { alert("先にスマホカメラを起動してください！"); return; }
+  if (!regVideo.srcObject) return null;
 
-  // プレビュー用のキャンバス作成
   const tempCanvas = document.createElement("canvas");
-  tempCanvas.width = 100;
-  tempCanvas.height = 100;
-  tempCanvas.getContext("2d").drawImage(regVideo, 0, 0, tempCanvas.width, tempCanvas.height);
-  const dataUrl = tempCanvas.toDataURL("image/jpeg");
+  tempCanvas.width = 224;
+  tempCanvas.height = 224;
+  const tempCtx = tempCanvas.getContext("2d");
 
-  // リストに保持
-  registeredItems.push({ name: name, image: dataUrl });
+  const vW = regVideo.videoWidth;
+  const vH = regVideo.videoHeight;
+  const dW = regVideo.clientWidth;
+  const dH = regVideo.clientHeight;
 
-  // 画面下部の「登録済みアイテム一覧」に追加
-  const container = document.createElement("div");
-  container.style.textAlign = "center";
-  container.style.cursor = "pointer";
-  container.onclick = () => selectSearchTarget(name);
+  const sX = vW / dW;
+  const sY = vH / dH;
+  const guideSize = 160;
+  const cW = guideSize * sX;
+  const cH = guideSize * sY;
+  const cX = (vW - cW) / 2;
+  const cY = (vH - cH) / 2;
+
+  tempCtx.drawImage(regVideo, cX, cY, cW, cH, 0, 0, 224, 224);
+  return tempCanvas;
+}
+
+// 物体（クラス0）撮影
+window.captureObject = function() {
+  const canvas = cropGuideArea();
+  if (!canvas) { alert("先にカメラを起動してください"); return; }
+  capturedObjects.push(canvas);
+  document.getElementById("objCount").innerText = capturedObjects.length;
 
   const img = document.createElement("img");
-  img.src = dataUrl;
-  img.style.width = "70px"; img.style.height = "70px"; img.style.objectFit = "cover"; img.style.borderRadius = "6px"; img.style.border = "2px solid #28a745";
-  container.appendChild(img);
+  img.src = canvas.toDataURL("image/jpeg");
+  img.style.width = "40px"; img.style.height = "40px"; img.style.objectFit = "cover"; img.style.borderRadius = "4px";
+  document.getElementById("objThumbnails").appendChild(img);
+};
 
-  const lbl = document.createElement("div");
-  lbl.innerText = name;
-  lbl.style.fontSize = "11px";
-  lbl.style.color = "#fff";
-  container.appendChild(lbl);
+// 背景（クラス1）撮影
+window.captureBackground = function() {
+  const canvas = cropGuideArea();
+  if (!canvas) { alert("先にカメラを起動してください"); return; }
+  capturedBackgrounds.push(canvas);
+  document.getElementById("bgCount").innerText = capturedBackgrounds.length;
 
-  document.getElementById("registeredList").appendChild(container);
+  const img = document.createElement("img");
+  img.src = canvas.toDataURL("image/jpeg");
+  img.style.width = "40px"; img.style.height = "40px"; img.style.objectFit = "cover"; img.style.borderRadius = "4px";
+  document.getElementById("bgThumbnails").appendChild(img);
+};
 
-  // 探索モード側の「クイック選択ボタン」にも追加
-  const quickBtn = document.createElement("button");
-  quickBtn.innerText = `🔍 ${name}`;
-  quickBtn.style.padding = "4px 8px";
-  quickBtn.style.background = "#28a745";
-  quickBtn.style.color = "#fff";
-  quickBtn.style.border = "none";
-  quickBtn.style.borderRadius = "4px";
-  quickBtn.style.cursor = "pointer";
-  quickBtn.style.fontSize = "12px";
-  quickBtn.onclick = () => selectSearchTarget(name);
-  document.getElementById("quickSelectList").appendChild(quickBtn);
+// ⚡ 撮影した複数枚の画像からブラウザ上でAI学習を実行
+window.trainAndRegister = async function() {
+  const name = document.getElementById("registerName").value.trim().toLowerCase();
+  if (!name) { alert("登録する物体名を入力してください！"); return; }
+  if (capturedObjects.length === 0 || capturedBackgrounds.length === 0) {
+    alert("物体（クラス0）と背景（クラス1）をそれぞれ1枚以上撮影してください！");
+    return;
+  }
 
-  document.getElementById("regStatus").innerText = `✅ 「${name}」を登録しました！探索タブから検索できます。`;
-  document.getElementById("registerName").value = "";
+  document.getElementById("regStatus").innerText = "⚡ AI学習中... しばらくお待ちください";
+  document.getElementById("regStatus").style.color = "#ffc107";
+
+  try {
+    // 転移学習用の分類モデル構築
+    customClassifier = tf.sequential();
+    customClassifier.add(tf.layers.dense({ units: 16, activation: 'relu', inputShape: [1024] }));
+    customClassifier.add(tf.layers.dense({ units: 2, activation: 'softmax' })); // [背景, 物体]
+    customClassifier.compile({ optimizer: tf.train.adam(0.0001), loss: 'categoricalCrossentropy', metrics: ['accuracy'] });
+
+    let inputs = [];
+    let labels = [];
+
+    // 背景データの変換と登録（ラベル: [1, 0]）
+    for (let bgCanvas of capturedBackgrounds) {
+      const tensor = tf.browser.fromPixels(bgCanvas).toFloat().expandDims(0);
+      const embedding = mobilenetModel.infer(tensor, true);
+      inputs.push(embedding);
+      labels.push([1, 0]);
+      tensor.dispose();
+    }
+
+    // 物体データの変換と登録（ラベル: [0, 1]）
+    for (let objCanvas of capturedObjects) {
+      const tensor = tf.browser.fromPixels(objCanvas).toFloat().expandDims(0);
+      const embedding = mobilenetModel.infer(tensor, true);
+      inputs.push(embedding);
+      labels.push([0, 1]);
+      tensor.dispose();
+    }
+
+    const xs = tf.concat(inputs);
+    const ys = tf.tensor2d(labels);
+
+    // 学習実行（エポック数15で高速に完了）
+    await customClassifier.fit(xs, ys, {
+      epochs: 15,
+      shuffle: true
+    });
+
+    xs.dispose();
+    ys.dispose();
+
+    activeCustomName = name;
+    
+    // セレクトボックスにカスタムモデルを追加
+    const modelSelect = document.getElementById("modelSelect");
+    if (!document.querySelector('#modelSelect option[value="custom"]')) {
+      modelSelect.innerHTML += `<option value="custom">カスタム: ${name}</option>`;
+    } else {
+      document.querySelector('#modelSelect option[value="custom"]').innerText = `カスタム: ${name}`;
+    }
+    modelSelect.value = "custom";
+    useCustomModel = true;
+
+    document.getElementById("regStatus").innerText = `🎉 「${name}」のAI学習が完了しました！探索モードで使えます。`;
+    document.getElementById("regStatus").style.color = "#00ff00";
+
+    // 登録リストおよびクイック選択ボタンに追加
+    const container = document.createElement("div");
+    container.style.textAlign = "center";
+    container.style.cursor = "pointer";
+    container.onclick = () => selectCustomTarget(name);
+
+    const thumb = document.createElement("img");
+    thumb.src = capturedObjects[0].toDataURL("image/jpeg");
+    thumb.style.width = "70px"; thumb.style.height = "70px"; thumb.style.objectFit = "cover"; thumb.style.borderRadius = "6px"; thumb.style.border = "2px solid #28a745";
+    container.appendChild(thumb);
+
+    const lbl = document.createElement("div");
+    lbl.innerText = name; lbl.style.fontSize = "10px"; lbl.style.color = "#fff";
+    container.appendChild(lbl);
+    document.getElementById("registeredList.innerHTML = ''; // クリア"
+    document.getElementById("registeredList").appendChild(container);
+
+    const quickBtn = document.createElement("button");
+    quickBtn.innerText = `🔍 ${name}`;
+    quickBtn.style.padding = "4px 8px"; quickBtn.style.background = "#28a745"; quickBtn.style.color = "#fff"; quickBtn.style.border = "none"; quickBtn.style.borderRadius = "4px"; quickBtn.style.cursor = "pointer"; quickBtn.style.fontSize = "12px";
+    quickBtn.onclick = () => selectCustomTarget(name);
+    document.getElementById("quickSelectList").appendChild(quickBtn);
+
+    // 撮影バッファをリセット
+    capturedObjects = [];
+    capturedBackgrounds = [];
+    document.getElementById("objCount").innerText = "0";
+    document.getElementById("bgCount").innerText = "0";
+    document.getElementById("objThumbnails").innerHTML = "";
+    document.getElementById("bgThumbnails").innerHTML = "";
+
+  } catch (err) {
+    console.error(err);
+    alert("学習中にエラーが発生しました: " + err.message);
+  }
 };
 
 // リアルタイム推論ループ
@@ -233,44 +355,68 @@ async function predictWebcam() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       let foundTarget = false;
 
-      const detections = objectDetector.detectForVideo(video, performance.now());
-      if (detections && detections.detections) {
-        const scaleX = canvas.width / video.videoWidth;
-        const scaleY = canvas.height / video.videoHeight;
+      if (useCustomModel && customClassifier) {
+        // 独自カスタムモデルでの判定
+        const tensor = tf.browser.fromPixels(video).toFloat().expandDims(0);
+        const embedding = mobilenetModel.infer(tensor, true);
+        const prediction = customClassifier.predict(embedding);
+        const probabilities = await prediction.data();
+        
+        tensor.dispose();
+        embedding.dispose();
+        prediction.dispose();
 
-        for (let detection of detections.detections) {
-          const categoryName = detection.categories[0].categoryName.toLowerCase();
-          const score = Math.round(detection.categories[0].score * 100);
+        // 確率 [背景, 物体] が 0.8以上の場合に検出とみなす
+        if (probabilities[1] > 0.8) {
+          foundTarget = true;
+          ctx.strokeStyle = "#00ff00";
+          ctx.lineWidth = 4;
+          ctx.strokeRect(40, 40, canvas.width - 80, canvas.height - 80);
+          ctx.fillStyle = "#00ff00";
+          ctx.font = "18px sans-serif";
+          ctx.fillText(`✨ ${activeCustomName} (${Math.round(probabilities[1] * 100)}%)`, 50, 70);
+        }
+      } else if (objectDetector) {
+        // 通常のMediaPipeモデルでの検出
+        const detections = objectDetector.detectForVideo(video, performance.now());
+        if (detections && detections.detections) {
+          const scaleX = canvas.width / video.videoWidth;
+          const scaleY = canvas.height / video.videoHeight;
 
-          if (categoryName.includes(currentSearchWord)) {
-            foundTarget = true;
-            const bbox = detection.boundingBox;
-            const x = bbox.originX * scaleX;
-            const y = bbox.originY * scaleY;
-            const width = bbox.width * scaleX;
-            const height = bbox.height * scaleY;
+          for (let detection of detections.detections) {
+            const categoryName = detection.categories[0].categoryName.toLowerCase();
+            const score = Math.round(detection.categories[0].score * 100);
 
-            ctx.strokeStyle = "#00ff00";
-            ctx.lineWidth = 4;
-            ctx.strokeRect(x, y, width, height);
-            ctx.fillStyle = "#00ff00";
-            ctx.font = "16px sans-serif";
-            ctx.fillText(`${categoryName} ${score}%`, x, y > 20 ? y - 5 : 20);
+            if (categoryName.includes(currentSearchWord)) {
+              foundTarget = true;
+              const bbox = detection.boundingBox;
+              const x = bbox.originX * scaleX;
+              const y = bbox.originY * scaleY;
+              const width = bbox.width * scaleX;
+              const height = bbox.height * scaleY;
 
-            const now = Date.now();
-            if (now - lastSaveTime > 3000) {
-              saveFoundImage(bbox);
-              lastSaveTime = now;
+              ctx.strokeStyle = "#00ff00";
+              ctx.lineWidth = 4;
+              ctx.strokeRect(x, y, width, height);
+              ctx.fillStyle = "#00ff00";
+              ctx.font = "16px sans-serif";
+              ctx.fillText(`${categoryName} ${score}%`, x, y > 20 ? y - 5 : 20);
+
+              const now = Date.now();
+              if (now - lastSaveTime > 3000) {
+                saveFoundImage(bbox);
+                lastSaveTime = now;
+              }
             }
           }
         }
       }
 
       if (foundTarget) {
-        status.innerText = `🎉 発見！ (${currentSearchWord})`;
+        status.innerText = `🎉 発見！`;
         status.style.color = "#00ff00";
       } else {
-        status.innerText = `🔍 探索中... (${currentSearchWord})`;
+        status.innerText = `🔍 探索中...`;
         status.style.color = "#aaa";
       }
     } catch (e) { console.error(e); }
