@@ -300,7 +300,7 @@ window.captureBackground = function() {
   document.getElementById("bgThumbnails").appendChild(img);
 };
 
-// ================= ✂️ 手動切り取り（クロップ）機能の堅牢版 =================
+// ================= ✂️ 手動切り取り（クロップ）機能の修正版 =================
 let capturedImageBitmap = null;
 let isDrawing = false;
 let startX = 0, startY = 0, endX = 0, endY = 0;
@@ -332,11 +332,14 @@ window.captureAndCropMode = function() {
         const cropSection = document.getElementById('crop-section');
         if (!cropCanvas || !cropSection) return;
 
-        const displayWidth = img.width > 350 ? 350 : img.width;
+        // スマホ画面幅に収まる適切な表示サイズに固定（例: 横幅320px）
+        const displayWidth = 320;
         const displayHeight = (img.height / img.width) * displayWidth;
 
         cropCanvas.width = displayWidth;
         cropCanvas.height = displayHeight;
+        cropCanvas.style.width = "100%";
+        cropCanvas.style.height = "auto";
 
         const ctxCrop = cropCanvas.getContext('2d');
         ctxCrop.clearRect(0, 0, displayWidth, displayHeight);
@@ -364,9 +367,14 @@ if (cropCanvas) {
         const rect = cropCanvas.getBoundingClientRect();
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
         const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        
+        // 画面上の表示サイズとCanvas内部の解像度の比率を計算して正確な座標を算出
+        const scaleX = cropCanvas.width / rect.width;
+        const scaleY = cropCanvas.height / rect.height;
+
         return {
-            x: clientX - rect.left,
-            y: clientY - rect.top
+            x: (clientX - rect.left) * scaleX,
+            y: (clientY - rect.top) * scaleY
         };
     }
 
@@ -375,6 +383,8 @@ if (cropCanvas) {
         const pos = getCursorPos(e);
         startX = pos.x;
         startY = pos.y;
+        endX = startX;
+        endY = startY;
     };
 
     cropCanvas.ontouchstart = (e) => {
@@ -382,6 +392,8 @@ if (cropCanvas) {
         const pos = getCursorPos(e);
         startX = pos.x;
         startY = pos.y;
+        endX = startX;
+        endY = startY;
     };
 
     cropCanvas.onmousemove = (e) => {
@@ -394,7 +406,7 @@ if (cropCanvas) {
         ctxCrop.drawImage(capturedImageBitmap, 0, 0, cropCanvas.width, cropCanvas.height);
 
         ctxCrop.strokeStyle = "#ff0055";
-        ctxCrop.lineWidth = 3;
+        ctxCrop.lineWidth = 4;
         ctxCrop.strokeRect(startX, startY, endX - startX, endY - startY);
     };
 
@@ -408,7 +420,7 @@ if (cropCanvas) {
         ctxCrop.drawImage(capturedImageBitmap, 0, 0, cropCanvas.width, cropCanvas.height);
 
         ctxCrop.strokeStyle = "#ff0055";
-        ctxCrop.lineWidth = 3;
+        ctxCrop.lineWidth = 4;
         ctxCrop.strokeRect(startX, startY, endX - startX, endY - startY);
     };
 
@@ -432,12 +444,9 @@ window.confirmCrop = function() {
     cutCanvas.height = 224;
     const cutCtx = cutCanvas.getContext('2d');
 
-    const scaleX = capturedImageBitmap.width / cropCanvas.width;
-    const scaleY = capturedImageBitmap.height / cropCanvas.height;
-
     cutCtx.drawImage(
         capturedImageBitmap, 
-        x * scaleX, y * scaleY, w * scaleX, h * scaleY,
+        x, y, w, h,
         0, 0, 224, 224
     );
 
