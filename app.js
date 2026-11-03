@@ -190,11 +190,49 @@ const cocoItems = [
   { en: "hair drier", jp: "ドライヤー" }, { en: "toothbrush", jp: "ハブラシ" }
 ];
 
+// 🔽 サジェスト表示関数（カスタムモード時は自分が登録した物体名のみをプルダウンに表示）
 window.filterSuggestions = function() {
   const input = document.getElementById("targetObject");
   const query = input.value.trim().toLowerCase();
   const box = document.getElementById("customSuggestions");
+  const selectedModel = document.getElementById("modelSelect").value;
 
+  // ✨ 修正：カスタムモデルが選ばれている場合は、登録済みカスタム物体の名前のみを対象にする
+  if (selectedModel === "custom") {
+    if (customObjects.length === 0) {
+      box.style.display = "none";
+      return;
+    }
+
+    // 入力文字に部分一致する登録物体名を抽出（未入力の場合は全件表示）
+    const matchedNames = customObjects
+      .map(obj => obj.name)
+      .filter(name => name.toLowerCase().includes(query));
+
+    if (matchedNames.length === 0) {
+      box.style.display = "none";
+      return;
+    }
+
+    box.innerHTML = "";
+    matchedNames.forEach(name => {
+      const div = document.createElement("div");
+      div.style.cssText = "padding: 8px 10px; font-size: 13px; color: #fff; cursor: pointer; border-bottom: 1px solid #333; text-align: left;";
+      div.innerHTML = `✨ <span style="font-weight: bold; color: #00ff00;">${name}</span> <span style="color: #aaa; font-size: 11px;">(カスタム登録)</span>`;
+      div.onmousedown = (e) => {
+        e.preventDefault(); 
+        input.value = name;
+        box.style.display = "none";
+        window.updateTarget();
+      };
+      box.appendChild(div);
+    });
+
+    box.style.display = "block";
+    return;
+  }
+
+  // 標準モデル（lite0/lite2）の場合は通常のCOCOデータセットサジェストを表示
   if (!query) {
     box.style.display = "none";
     return;
@@ -316,7 +354,9 @@ window.updateTarget = function() {
     "歯ブラシ": "toothbrush", "ハブラシ": "toothbrush"
   };
 
-  if (jpToEnMap[inputVal]) {
+  const selectedModel = document.getElementById("modelSelect").value;
+  // カスタムモデル選択時は辞書変換をバイパスして、ユーザーが登録したそのままの名前を優先
+  if (selectedModel !== "custom" && jpToEnMap[inputVal]) {
     inputVal = jpToEnMap[inputVal];
     document.getElementById("targetObject").value = inputVal;
   }
@@ -930,7 +970,6 @@ async function predictWebcam() {
 
       // 【カスタム検知モード】
       if (useCustomModel && customObjects.length > 0 && mobilenetModel && objectDetector) {
-        // ✨ 修正：入力欄で指定されている物体名（currentSearchWord）に一致する登録データのみをフィルタリング
         const targetCustomObjs = customObjects.filter(obj => obj.name.toLowerCase() === currentSearchWord.toLowerCase());
 
         const detections = objectDetector.detectForVideo(video, performance.now());
@@ -963,7 +1002,6 @@ async function predictWebcam() {
             let bestMatchName = "";
             let maxOverallSimilarity = 0;
 
-            // 絞り込んだ指定物体だけに限定して類似度を比較
             for (let obj of targetCustomObjs) {
               let maxObjSimilarity = 0;
               for (let regEmb of obj.embeddings) {
