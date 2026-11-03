@@ -11,8 +11,9 @@ let useCustomModel = false;
 let activeCustomName = "";
 let currentAspect = 'square'; // ガイド枠の比率
 
-// 🔴 追加：現在編集中のカスタム物体のインデックス（nullなら新規登録モード）
+// 現在編集中のカスタム物体のインデックス（nullなら新規登録モード）
 let editingObjectIndex = null;
+let originalEditingName = ""; // 編集キャンセル時に名前を戻すため
 
 const video = document.getElementById("video");
 const canvas = document.getElementById("outputCanvas");
@@ -244,6 +245,8 @@ window.removeCustomObject = function(index) {
   if (editingObjectIndex === index) {
     editingObjectIndex = null;
     document.getElementById("registerName").value = "";
+    document.getElementById("regStatus").innerText = "ステータス: 待機中";
+    document.getElementById("regStatus").style.color = "#aaa";
   } else if (editingObjectIndex !== null && editingObjectIndex > index) {
     editingObjectIndex--;
   }
@@ -324,40 +327,67 @@ function updateBackgroundThumbnailsUI() {
   });
 }
 
-// 🔴 【追加機能】登録済み物体の写真をタップしたときの処理（編集モードに切り替え）
-window.editCustomObject = function(index) {
+// 🔴 編集モードに入る関数
+window.startEditingObject = function(index) {
   editingObjectIndex = index;
   const obj = customObjects[index];
+  originalEditingName = obj.name;
   document.getElementById("registerName").value = obj.name;
-  document.getElementById("regStatus").innerText = `✏️ 「${obj.name}」の編集モードです。追加する写真/背景を撮影して学習ボタンを押してください。`;
+  
+  // 編集用の一時保存配列をクリア
+  capturedObjects = [];
+  capturedBackgrounds = [];
+  document.getElementById("objCount").innerText = "0";
+  document.getElementById("bgCount").innerText = "0";
+  document.getElementById("objThumbnails").innerHTML = "";
+  document.getElementById("bgThumbnails").innerHTML = "";
+
+  document.getElementById("regStatus").innerText = `✏️ 「${obj.name}」の編集モード中。追加する写真/背景を撮影して学習ボタンを押してください。`;
   document.getElementById("regStatus").style.color = "#ffc107";
   
-  // 編集しやすいようにページトップ付近（名前入力欄）へスムーズスクロール
+  updateRegisteredListUI();
   document.getElementById("registerName").scrollIntoView({ behavior: 'smooth' });
 };
 
-// 登録リストのUI更新と×ボタン、タップ編集対応描画
+// 🔴 編集モードを終了する関数（データを追加せずにキャンセル）
+window.cancelEditingObject = function() {
+  if (editingObjectIndex !== null) {
+    const objName = customObjects[editingObjectIndex].name;
+    editingObjectIndex = null;
+    capturedObjects = [];
+    capturedBackgrounds = [];
+    document.getElementById("objCount").innerText = "0";
+    document.getElementById("bgCount").innerText = "0";
+    document.getElementById("objThumbnails").innerHTML = "";
+    document.getElementById("bgThumbnails").innerHTML = "";
+    document.getElementById("registerName").value = "";
+    
+    document.getElementById("regStatus").innerText = `ステータス: 「${objName}」の編集をキャンセルしました（データは追加されません）`;
+    document.getElementById("regStatus").style.color = "#aaa";
+    updateRegisteredListUI();
+  }
+};
+
+// 登録リストのUI更新と、下に「編集モード」「終了」ボタンを配置
 function updateRegisteredListUI() {
   const registeredList = document.getElementById("registeredList");
   registeredList.innerHTML = "";
 
   customObjects.forEach((obj, idx) => {
     const container = document.createElement("div");
-    container.style.cssText = "position: relative; display: inline-block; text-align: center; margin-right: 10px;";
+    container.style.cssText = "position: relative; display: inline-block; text-align: center; margin-right: 12px; background: #222; padding: 8px; border-radius: 8px; vertical-align: top;";
     
+    const isEditing = (editingObjectIndex === idx);
+
     const thumb = document.createElement("img");
     thumb.src = obj.thumbnail;
-    // 編集中のものは枠の色を変えて分かりやすくする
-    const isEditing = (editingObjectIndex === idx);
-    thumb.style.cssText = `width: 70px; height: 70px; object-fit: cover; border-radius: 6px; border: 3px solid ${isEditing ? '#ffc107' : '#28a745'}; cursor: pointer;`;
-    
-    // 🔴 タップで編集モードに入るように変更
-    thumb.onclick = () => editCustomObject(idx);
+    thumb.style.cssText = `width: 60px; height: 60px; object-fit: cover; border-radius: 6px; border: 3px solid ${isEditing ? '#ffc107' : '#28a745'}; display: block; margin: 0 auto; cursor: pointer;`;
+    thumb.onclick = () => selectCustomTarget(obj.name);
     container.appendChild(thumb);
 
     const deleteBtn = document.createElement("button");
     deleteBtn.innerText = "×";
-    deleteBtn.style.cssText = "position: absolute; top: -5px; right: -5px; background: #dc3545; color: #fff; border: none; border-radius: 50%; width: 20px; height: 20px; font-size: 12px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center;";
+    deleteBtn.style.cssText = "position: absolute; top: -3px; right: -3px; background: #dc3545; color: #fff; border: none; border-radius: 50%; width: 20px; height: 20px; font-size: 12px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center;";
     deleteBtn.onclick = (e) => {
       e.stopPropagation();
       removeCustomObject(idx);
@@ -365,10 +395,29 @@ function updateRegisteredListUI() {
     container.appendChild(deleteBtn);
 
     const lbl = document.createElement("div");
-    lbl.innerText = obj.name + (isEditing ? " (編集中)" : ""); 
-    lbl.style.cssText = `font-size: 10px; color: ${isEditing ? '#ffc107' : '#fff'}; margin-top: 2px; font-weight: ${isEditing ? 'bold' : 'normal'};`;
+    lbl.innerText = obj.name; 
+    lbl.style.cssText = `font-size: 10px; color: ${isEditing ? '#ffc107' : '#fff'}; margin-top: 3px; font-weight: bold;`;
     container.appendChild(lbl);
 
+    // 🔴 写真の下に小さく「編集モード」または「終了」ボタンを配置
+    const editBtnContainer = document.createElement("div");
+    editBtnContainer.style.cssText = "margin-top: 5px; display: flex; gap: 3px; justify-content: center;";
+
+    if (!isEditing) {
+      const editBtn = document.createElement("button");
+      editBtn.innerText = "✏️編集モード";
+      editBtn.style.cssText = "padding: 3px 6px; font-size: 9px; background: #17a2b8; color: #fff; border: none; border-radius: 3px; cursor: pointer; font-weight: bold;";
+      editBtn.onclick = () => startEditingObject(idx);
+      editBtnContainer.appendChild(editBtn);
+    } else {
+      const exitEditBtn = document.createElement("button");
+      exitEditBtn.innerText = "⏹️終了";
+      exitEditBtn.style.cssText = "padding: 3px 8px; font-size: 9px; background: #6c757d; color: #fff; border: none; border-radius: 3px; cursor: pointer; font-weight: bold;";
+      exitEditBtn.onclick = () => cancelEditingObject();
+      editBtnContainer.appendChild(exitEditBtn);
+    }
+
+    container.appendChild(editBtnContainer);
     registeredList.appendChild(container);
   });
 }
@@ -550,20 +599,19 @@ window.trainAndRegister = async function() {
     }
 
     if (editingObjectIndex !== null) {
-      // 🔴 編集モード（既存の物体にデータを追加）
+      // 🔴 編集モード（既存の物体にデータを追加して保存）
       const targetObj = customObjects[editingObjectIndex];
-      targetObj.name = name; // 名前変更にも対応
+      targetObj.name = name;
       targetObj.embeddings.push(...objEmbeddings);
       targetObj.backgrounds.push(...bgEmbeddings);
       
-      // もし新しい物体写真があればサムネイルも更新
       if (capturedObjects.length > 0) {
         targetObj.thumbnail = capturedObjects[0].dataUrl;
       }
 
       document.getElementById("regStatus").innerText = `🎉 「${name}」にデータを追加しました！`;
       alert(`「${name}」に新しいデータを追加しました！`);
-      editingObjectIndex = null; // 編集モード終了
+      editingObjectIndex = null;
     } else {
       // 🟢 新規登録モード
       const newObjectData = {
