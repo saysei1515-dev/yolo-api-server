@@ -46,7 +46,7 @@ function saveCustomObjectsToStorage() {
   try {
     localStorage.setItem("customObjects", JSON.stringify(customObjects));
   } catch (e) {
-    console.error("データの保存に失敗しました（容量制限などの可能性があります）:", e);
+    console.error("データの保存に失敗しました:", e);
   }
 }
 
@@ -55,7 +55,6 @@ async function initializeAI() {
   status.innerText = "ステータス: AIモデルをロード中...";
   status.style.color = "#ffc107";
 
-  // 保存されているカスタム物体があればUIと選択肢を自動復元
   if (customObjects.length > 0) {
     const modelSelect = document.getElementById("modelSelect");
     if (modelSelect && !modelSelect.querySelector('option[value="custom"]')) {
@@ -191,7 +190,6 @@ const cocoItems = [
   { en: "hair drier", jp: "ドライヤー" }, { en: "toothbrush", jp: "ハブラシ" }
 ];
 
-// 入力に応じてカスタムサジェストを表示する関数
 window.filterSuggestions = function() {
   const input = document.getElementById("targetObject");
   const query = input.value.trim().toLowerCase();
@@ -228,7 +226,6 @@ window.filterSuggestions = function() {
   box.style.display = "block";
 };
 
-// 日本語→英語変換対応のターゲット更新関数
 window.updateTarget = function() {
   const customSuggestions = document.getElementById("customSuggestions");
   if (customSuggestions) customSuggestions.style.display = "none";
@@ -236,7 +233,6 @@ window.updateTarget = function() {
   let inputVal = document.getElementById("targetObject").value.trim().toLowerCase();
   if (!inputVal) { alert("探すものを入力してください！"); return; }
 
-  // 日本語入力に対応する辞書マップ
   const jpToEnMap = {
     "人": "person", "ひと": "person", "ヒト": "person",
     "自転車": "bicycle", "チャリ": "bicycle", "ジテンシャ": "bicycle",
@@ -320,7 +316,6 @@ window.updateTarget = function() {
     "歯ブラシ": "toothbrush", "ハブラシ": "toothbrush"
   };
 
-  // 入力が日本語辞書にあれば英語に自動変換
   if (jpToEnMap[inputVal]) {
     inputVal = jpToEnMap[inputVal];
     document.getElementById("targetObject").value = inputVal;
@@ -394,11 +389,11 @@ window.setAspectRatio = function(type) {
   }
 };
 
-// 全体リセット機能（ストレージも消去）
+// 全体リセット機能
 window.clearCustomModel = function() {
   if (!confirm("登録したすべての物体データとモデルを消去しますか？")) return;
   customObjects = [];
-  localStorage.removeItem("customObjects"); // 🗑️ ストレージから消去
+  localStorage.removeItem("customObjects");
 
   useCustomModel = false;
   activeCustomName = "";
@@ -428,13 +423,19 @@ window.clearCustomModel = function() {
 window.removeCustomObject = function(index) {
   const removedObj = customObjects[index];
   customObjects.splice(index, 1);
-  saveCustomObjectsToStorage(); // 💾 ストレージ更新
+  saveCustomObjectsToStorage();
 
   if (editingObjectIndex === index) {
     editingObjectIndex = null;
     document.getElementById("registerName").value = "";
     document.getElementById("regStatus").innerText = "ステータス: 待機中";
     document.getElementById("regStatus").style.color = "#aaa";
+    capturedObjects = [];
+    capturedBackgrounds = [];
+    document.getElementById("objCount").innerText = "0";
+    document.getElementById("bgCount").innerText = "0";
+    document.getElementById("objThumbnails").innerHTML = "";
+    document.getElementById("bgThumbnails").innerHTML = "";
   } else if (editingObjectIndex !== null && editingObjectIndex > index) {
     editingObjectIndex--;
   }
@@ -516,21 +517,33 @@ function updateBackgroundThumbnailsUI() {
   });
 }
 
-// 編集モードに入る関数
+// ✏️ 編集モードに入る関数（✨ 修正：既存の保存済み写真を読み込んで下に表示する）
 window.startEditingObject = function(index) {
   editingObjectIndex = index;
   const obj = customObjects[index];
   originalEditingName = obj.name;
   document.getElementById("registerName").value = obj.name;
 
+  // 🔄 既存のサムネイルから一時配列へ復元（画像のdataUrlからImageオブジェクト/Canvasを再構築）
   capturedObjects = [];
-  capturedBackgrounds = [];
-  document.getElementById("objCount").innerText = "0";
-  document.getElementById("bgCount").innerText = "0";
-  document.getElementById("objThumbnails").innerHTML = "";
+  if (obj.thumbnail) {
+    const tempImg = new Image();
+    tempImg.onload = function() {
+      const c = document.createElement("canvas");
+      c.width = 224; c.height = 224;
+      c.getContext("2d").drawImage(tempImg, 0, 0, 224, 224);
+      capturedObjects.push({ canvas: c, dataUrl: obj.thumbnail });
+      document.getElementById("objCount").innerText = capturedObjects.length;
+      updateObjectThumbnailsUI();
+    };
+    tempImg.src = obj.thumbnail;
+  }
+
+  capturedBackgrounds = []; // 背景は必要に応じて保持・クリア（今回は安全のため一旦クリアまたは必要なら維持）
+  document.getElementById("bgCount").innerText = capturedBackgrounds.length;
   document.getElementById("bgThumbnails").innerHTML = "";
 
-  document.getElementById("regStatus").innerText = `✏️ 「${obj.name}」の編集モード中。追加する写真/背景を撮影して学習ボタンを押してください。`;
+  document.getElementById("regStatus").innerText = `✏️ 「${obj.name}」の編集モード中。名前の変更や追加の写真撮影が可能です。`;
   document.getElementById("regStatus").style.color = "#ffc107";
 
   updateRegisteredListUI();
@@ -550,7 +563,7 @@ window.cancelEditingObject = function() {
     document.getElementById("bgThumbnails").innerHTML = "";
     document.getElementById("registerName").value = "";
 
-    document.getElementById("regStatus").innerText = `ステータス: 「${objName}」の編集をキャンセルしました（データは追加されません）`;
+    document.getElementById("regStatus").innerText = `ステータス: 「${objName}」の編集をキャンセルしました`;
     document.getElementById("regStatus").style.color = "#aaa";
     updateRegisteredListUI();
   }
@@ -762,7 +775,12 @@ window.cancelCrop = function() {
 window.trainAndRegister = async function() {
   const name = document.getElementById("registerName").value.trim().toLowerCase();
   if (!name) { alert("登録する物体名を入力してください！"); return; }
-  if (capturedObjects.length === 0) { alert("物体を1枚以上撮影してください！"); return; }
+  
+  // ✨ 修正：新規登録時は写真必須だが、編集モード時は追加写真が0枚でも名前変更のみで保存可能にする
+  if (editingObjectIndex === null && capturedObjects.length === 0) { 
+    alert("物体を1枚以上撮影してください！"); 
+    return; 
+  }
   if (!mobilenetModel) { alert("MobileNetモデルがまだロードされていません。"); return; }
 
   document.getElementById("regStatus").innerText = "⚡ 回転データ拡張 & AI特徴量を解析中...";
@@ -775,6 +793,9 @@ window.trainAndRegister = async function() {
     const angles = [0, 45, 90, 135, 180, 225, 270, 315];
 
     for (let item of capturedObjects) {
+      // 既存データ復元用のdataUrlしかない場合はスキップして古いembeddingsを維持、あるいは必要なら再演算
+      if (!item.canvas) continue; 
+
       for (let angle of angles) {
         const rotCanvas = document.createElement("canvas");
         rotCanvas.width = 224;
@@ -794,6 +815,7 @@ window.trainAndRegister = async function() {
     }
 
     for (let item of capturedBackgrounds) {
+      if (!item.canvas) continue;
       tf.tidy(() => {
         const tensor = tf.browser.fromPixels(item.canvas).toFloat().expandDims(0);
         const embedding = mobilenetModel.infer(tensor, true);
@@ -804,15 +826,20 @@ window.trainAndRegister = async function() {
     if (editingObjectIndex !== null) {
       const targetObj = customObjects[editingObjectIndex];
       targetObj.name = name;
-      targetObj.embeddings.push(...objEmbeddings);
-      targetObj.backgrounds.push(...bgEmbeddings);
-
-      if (capturedObjects.length > 0) {
-        targetObj.thumbnail = capturedObjects[0].dataUrl;
+      
+      // 新規に写真が追加された場合のみ特徴量を追加
+      if (objEmbeddings.length > 0) {
+        targetObj.embeddings.push(...objEmbeddings);
+      }
+      if (bgEmbeddings.length > 0) {
+        targetObj.backgrounds.push(...bgEmbeddings);
+      }
+      if (capturedObjects.length > 0 && capturedObjects[capturedObjects.length - 1].dataUrl) {
+        targetObj.thumbnail = capturedObjects[capturedObjects.length - 1].dataUrl;
       }
 
-      document.getElementById("regStatus").innerText = `🎉 「${name}」にデータを追加しました！`;
-      alert(`「${name}」に新しいデータを追加しました！`);
+      document.getElementById("regStatus").innerText = `🎉 「${name}」の情報を更新しました！`;
+      alert(`「${name}」の情報を更新しました！`);
       editingObjectIndex = null;
     } else {
       const newObjectData = {
@@ -849,7 +876,7 @@ window.trainAndRegister = async function() {
     document.getElementById("registerName").value = "";
   } catch (err) {
     console.error(err);
-    alert("登録・追加中にエラーが発生しました: " + err.message);
+    alert("登録・更新中にエラーが発生しました: " + err.message);
   }
 };
 
@@ -899,7 +926,6 @@ async function predictWebcam() {
 
             if (width < 20 || height < 20) continue;
 
-            // 枠内を正方形（224x224）に強制変換してMobileNetへ入力
             const cropCanvas = document.createElement("canvas");
             cropCanvas.width = 224;
             cropCanvas.height = 224;
