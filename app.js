@@ -517,7 +517,7 @@ function updateBackgroundThumbnailsUI() {
   });
 }
 
-// ✏️ 編集モードに入る関数（✨ 修正：すべての保存済み物体写真・背景写真を完全に復元する）
+// ✏️ 編集モードに入る関数
 window.startEditingObject = function(index) {
   editingObjectIndex = index;
   const obj = customObjects[index];
@@ -930,9 +930,12 @@ async function predictWebcam() {
 
       // 【カスタム検知モード】
       if (useCustomModel && customObjects.length > 0 && mobilenetModel && objectDetector) {
+        // ✨ 修正：入力欄で指定されている物体名（currentSearchWord）に一致する登録データのみをフィルタリング
+        const targetCustomObjs = customObjects.filter(obj => obj.name.toLowerCase() === currentSearchWord.toLowerCase());
+
         const detections = objectDetector.detectForVideo(video, performance.now());
 
-        if (detections && detections.detections) {
+        if (detections && detections.detections && targetCustomObjs.length > 0) {
           const scaleX = canvas.width / video.videoWidth;
           const scaleY = canvas.height / video.videoHeight;
 
@@ -960,7 +963,8 @@ async function predictWebcam() {
             let bestMatchName = "";
             let maxOverallSimilarity = 0;
 
-            for (let obj of customObjects) {
+            // 絞り込んだ指定物体だけに限定して類似度を比較
+            for (let obj of targetCustomObjs) {
               let maxObjSimilarity = 0;
               for (let regEmb of obj.embeddings) {
                 const similarity = calculateCosineSimilarity(currentEmbedding, regEmb);
