@@ -517,14 +517,14 @@ function updateBackgroundThumbnailsUI() {
   });
 }
 
-// ✏️ 編集モードに入る関数（✨ 修正：既存の保存済み写真を読み込んで下に表示する）
+// ✏️ 編集モードに入る関数（✨ 修正：過去の物体写真・背景写真の両方を復元して表示＆×で削除可能にする）
 window.startEditingObject = function(index) {
   editingObjectIndex = index;
   const obj = customObjects[index];
   originalEditingName = obj.name;
   document.getElementById("registerName").value = obj.name;
 
-  // 🔄 既存のサムネイルから一時配列へ復元（画像のdataUrlからImageオブジェクト/Canvasを再構築）
+  // 🔄 過去の「物体写真」をサムネイル＆データ用配列に復元
   capturedObjects = [];
   if (obj.thumbnail) {
     const tempImg = new Image();
@@ -539,11 +539,27 @@ window.startEditingObject = function(index) {
     tempImg.src = obj.thumbnail;
   }
 
-  capturedBackgrounds = []; // 背景は必要に応じて保持・クリア（今回は安全のため一旦クリアまたは必要なら維持）
-  document.getElementById("bgCount").innerText = capturedBackgrounds.length;
-  document.getElementById("bgThumbnails").innerHTML = "";
+  // 🔄 過去の「背景写真」データ（サムネイルURL等があれば）を復元
+  capturedBackgrounds = [];
+  if (obj.backgroundThumbnails && Array.isArray(obj.backgroundThumbnails)) {
+    obj.backgroundThumbnails.forEach(bgUrl => {
+      const tempBgImg = new Image();
+      tempBgImg.onload = function() {
+        const cBg = document.createElement("canvas");
+        cBg.width = 224; cBg.height = 224;
+        cBg.getContext("2d").drawImage(tempBgImg, 0, 0, 224, 224);
+        capturedBackgrounds.push({ canvas: cBg, dataUrl: bgUrl });
+        document.getElementById("bgCount").innerText = capturedBackgrounds.length;
+        updateBackgroundThumbnailsUI();
+      };
+      tempBgImg.src = bgUrl;
+    });
+  } else {
+    document.getElementById("bgCount").innerText = "0";
+    document.getElementById("bgThumbnails").innerHTML = "";
+  }
 
-  document.getElementById("regStatus").innerText = `✏️ 「${obj.name}」の編集モード中。名前の変更や追加の写真撮影が可能です。`;
+  document.getElementById("regStatus").innerText = `✏️ 「${obj.name}」の編集モード中。写真の削除・追加、名前の変更が可能です。`;
   document.getElementById("regStatus").style.color = "#ffc107";
 
   updateRegisteredListUI();
@@ -776,7 +792,6 @@ window.trainAndRegister = async function() {
   const name = document.getElementById("registerName").value.trim().toLowerCase();
   if (!name) { alert("登録する物体名を入力してください！"); return; }
   
-  // ✨ 修正：新規登録時は写真必須だが、編集モード時は追加写真が0枚でも名前変更のみで保存可能にする
   if (editingObjectIndex === null && capturedObjects.length === 0) { 
     alert("物体を1枚以上撮影してください！"); 
     return; 
@@ -788,12 +803,11 @@ window.trainAndRegister = async function() {
   try {
     let objEmbeddings = [];
     let bgEmbeddings = [];
+    let bgThumbnailsList = [];
 
-    // 45°刻みで8方向の角度を生成して学習（データ拡張）
     const angles = [0, 45, 90, 135, 180, 225, 270, 315];
 
     for (let item of capturedObjects) {
-      // 既存データ復元用のdataUrlしかない場合はスキップして古いembeddingsを維持、あるいは必要なら再演算
       if (!item.canvas) continue; 
 
       for (let angle of angles) {
@@ -816,6 +830,7 @@ window.trainAndRegister = async function() {
 
     for (let item of capturedBackgrounds) {
       if (!item.canvas) continue;
+      bgThumbnailsList.push(item.dataUrl);
       tf.tidy(() => {
         const tensor = tf.browser.fromPixels(item.canvas).toFloat().expandDims(0);
         const embedding = mobilenetModel.infer(tensor, true);
@@ -827,12 +842,14 @@ window.trainAndRegister = async function() {
       const targetObj = customObjects[editingObjectIndex];
       targetObj.name = name;
       
-      // 新規に写真が追加された場合のみ特徴量を追加
+      // 写真が新しく追加された場合は特徴量と背景サムネイルを結合・更新
       if (objEmbeddings.length > 0) {
         targetObj.embeddings.push(...objEmbeddings);
       }
       if (bgEmbeddings.length > 0) {
         targetObj.backgrounds.push(...bgEmbeddings);
+        if (!targetObj.backgroundThumbnails) targetObj.backgroundThumbnails = [];
+        targetObj.backgroundThumbnails.push(...bgThumbnailsList);
       }
       if (capturedObjects.length > 0 && capturedObjects[capturedObjects.length - 1].dataUrl) {
         targetObj.thumbnail = capturedObjects[capturedObjects.length - 1].dataUrl;
@@ -846,6 +863,7 @@ window.trainAndRegister = async function() {
         name: name,
         embeddings: objEmbeddings,
         backgrounds: bgEmbeddings,
+        backgroundThumbnails: bgThumbnailsList,
         thumbnail: capturedObjects[0].dataUrl
       };
       customObjects.push(newObjectData);
@@ -1029,7 +1047,7 @@ async function predictWebcam() {
       }
 
       if (foundTarget) {
-        status.innerText = `🎉 発見しました！`;
+        status.innerText = `🎉 발견しました！`;
         status.style.color = "#00ff00";
       } else {
         status.innerText = `🔍 探索中... (${useCustomModel ? activeCustomName : currentSearchWord})`;
