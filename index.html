@@ -36,95 +36,15 @@
         <div id="qr-reader" style="width: 100%; max-width: 260px; margin: 10px auto; display: none;"></div>
         <div id="connectionStatus" style="font-size: 12px; color: #666; margin-top: 5px;">ステータス: 未接続</div>
       </div>
-      <div class="control-group">
+      <div class="control-group" style="position: relative;">
         <label for="targetObject">探すもの (カタカナ/英語対応):</label>
         <div style="display: flex; gap: 5px;">
-          <input type="text" id="targetObject" value="cup" placeholder="例: コップ または cup" list="coco-suggestions" style="flex: 1;">
+          <input type="text" id="targetObject" value="cup" placeholder="例: コップ または cup" autocomplete="off" oninput="filterSuggestions()" style="flex: 1;">
           <button onclick="updateTarget()" style="padding: 0 15px; background: #007bff; color: #fff; border: none; font-weight: bold; border-radius: 4px; cursor: pointer;">決定</button>
         </div>
-        <!-- 予測入力（サジェスト）用の候補リスト（カタカナ対応） -->
-        <datalist id="coco-suggestions">
-          <option value="person">ヒト (person)</option>
-          <option value="bicycle">ジテンシャ (bicycle)</option>
-          <option value="car">クルマ (car)</option>
-          <option value="motorcycle">バイク (motorcycle)</option>
-          <option value="airplane">ヒコウキ (airplane)</option>
-          <option value="bus">バス (bus)</option>
-          <option value="train">デンシャ (train)</option>
-          <option value="truck">トラック (truck)</option>
-          <option value="boat">ボート (boat)</option>
-          <option value="traffic light">シンゴウ (traffic light)</option>
-          <option value="fire hydrant">ショウカセン (fire hydrant)</option>
-          <option value="stop sign">イチジテイシ (stop sign)</option>
-          <option value="parking meter">パーキングメーター (parking meter)</option>
-          <option value="bench">ベンチ (bench)</option>
-          <option value="bird">トリ (bird)</option>
-          <option value="cat">ネコ (cat)</option>
-          <option value="dog">イヌ (dog)</option>
-          <option value="horse">ウマ (horse)</option>
-          <option value="sheep">ヒツジ (sheep)</option>
-          <option value="cow">ウシ (cow)</option>
-          <option value="elephant">ゾウ (elephant)</option>
-          <option value="bear">クマ (bear)</option>
-          <option value="zebra">シマウマ (zebra)</option>
-          <option value="giraffe">キリン (giraffe)</option>
-          <option value="backpack">リュック (backpack)</option>
-          <option value="umbrella">カサ (umbrella)</option>
-          <option value="handbag">ハンドバッグ (handbag)</option>
-          <option value="tie">ネクタイ (tie)</option>
-          <option value="suitcase">スーツケース (suitcase)</option>
-          <option value="frisbee">フリスビー (frisbee)</option>
-          <option value="skis">スキー (skis)</option>
-          <option value="snowboard">スノーボード (snowboard)</option>
-          <option value="sports ball">ボール (sports ball)</option>
-          <option value="kite">タコ (kite)</option>
-          <option value="baseball bat">バット (baseball bat)</option>
-          <option value="baseball glove">グローブ (baseball glove)</option>
-          <option value="skateboard">スケートボード (skateboard)</option>
-          <option value="surfboard">サーフボード (surfboard)</option>
-          <option value="tennis racket">ラケット (tennis racket)</option>
-          <option value="bottle">ボトル (bottle)</option>
-          <option value="wine glass">ワイングラス (wine glass)</option>
-          <option value="cup">コップ (cup)</option>
-          <option value="fork">フォーク (fork)</option>
-          <option value="knife">ナイフ (knife)</option>
-          <option value="spoon">スプーン (spoon)</option>
-          <option value="bowl">ボウル (bowl)</option>
-          <option value="banana">バナナ (banana)</option>
-          <option value="apple">リンゴ (apple)</option>
-          <option value="sandwich">サンドイッチ (sandwich)</option>
-          <option value="orange">オレンジ (orange)</option>
-          <option value="broccoli">ブロッコリー (broccoli)</option>
-          <option value="carrot">ニンジン (carrot)</option>
-          <option value="hot dog">ホットドッグ (hot dog)</option>
-          <option value="pizza">ピザ (pizza)</option>
-          <option value="donut">ドーナツ (donut)</option>
-          <option value="cake">ケーキ (cake)</option>
-          <option value="chair">イス (chair)</option>
-          <option value="couch">ソファ (couch)</option>
-          <option value="potted plant">ショクブツ (potted plant)</option>
-          <option value="bed">ベッド (bed)</option>
-          <option value="dining table">テーブル (dining table)</option>
-          <option value="toilet">トイレ (toilet)</option>
-          <option value="tv">テレビ (tv)</option>
-          <option value="laptop">パソコン (laptop)</option>
-          <option value="mouse">マウス (mouse)</option>
-          <option value="remote">リモコン (remote)</option>
-          <option value="keyboard">キーボード (keyboard)</option>
-          <option value="cell phone">スマホ (cell phone)</option>
-          <option value="microwave">レンジ (microwave)</option>
-          <option value="oven">オーブン (oven)</option>
-          <option value="toaster">トースター (toaster)</option>
-          <option value="sink">シンク (sink)</option>
-          <option value="refrigerator">レイゾウコ (refrigerator)</option>
-          <option value="book">ホン (book)</option>
-          <option value="clock">トケイ (clock)</option>
-          <option value="vase">カビン (vase)</option>
-          <option value="scissors">ハサミ (scissors)</option>
-          <option value="teddy bear">ヌイグルミ (teddy bear)</option>
-          <option value="hair drier">ドライヤー (hair drier)</option>
-          <option value="toothbrush">ハブラシ (toothbrush)</option>
-        </datalist>
+        <!-- 🔽 カスタムサジェストリスト（高さを抑えてスクロール式に） -->
+        <div id="customSuggestions" style="display: none; position: absolute; left: 10px; right: 10px; top: 65px; background: #181818; border: 1px solid #444; border-radius: 4px; max-height: 130px; overflow-y: auto; z-index: 1000; box-shadow: 0 4px 10px rgba(0,0,0,0.5);"></div>
+        
         <div id="quickSelectList" style="display: flex; gap: 5px; flex-wrap: wrap; margin-top: 8px;"></div>
       </div>
       <!-- ⚙️ 標準モデル切り替えボタン（Lite0 / Lite2） -->
