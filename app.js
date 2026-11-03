@@ -9,7 +9,6 @@ let mobilenetModel = undefined;
 // 特徴量蓄積用データベース（物体と背景）
 let registeredEmbeddings = []; 
 let backgroundEmbeddings = []; 
-let useCustomModel = false;
 let activeCustomName = "";
 let currentAspect = 'square'; // ガイド枠の比率
 
@@ -33,10 +32,8 @@ let conn = null;
 let capturedObjects = [];
 let capturedBackgrounds = [];
 
-const modelPaths = {
-  lite0: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite",
-  lite2: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite2/float16/1/efficientdet_lite2.tflite"
-};
+// 標準モデルのパス（デフォルトはLite0を使用）
+const defaultModelPath = "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite";
 
 // 初期AIロード
 async function initializeAI() {
@@ -46,10 +43,10 @@ async function initializeAI() {
     vision = await FilesetResolver.forVisionTasks(
       "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.2/wasm"
     );
-    const selectedModel = document.getElementById("modelSelect").value;
+    // 標準の物体検出器をロード
     objectDetector = await ObjectDetector.createFromOptions(vision, {
       baseOptions: {
-        modelAssetPath: modelPaths[selectedModel],
+        modelAssetPath: defaultModelPath,
         delegate: "GPU"
       },
       scoreThreshold: 0.3,
@@ -107,35 +104,11 @@ peer.on('call', (call) => {
     webcamRunning = true;
     startButton.style.display = "none";
     stopButton.style.display = "block";
-    status.innerText = `ステータス: 探索中... (${currentSearchWord})`;
+    status.innerText = `ステータス: 探索中... (${registeredEmbeddings.length > 0 ? activeCustomName : currentSearchWord})`;
     status.style.color = "#00ff00";
     video.onloadeddata = () => { predictWebcam(); };
   });
 });
-
-// モデル切り替え（「登録した物体の検知」に対応）
-window.changeModel = async function() {
-  const selectedModel = document.getElementById("modelSelect").value;
-  if (selectedModel === "custom") {
-    if (registeredEmbeddings.length === 0) {
-      alert("登録された物体がありません。「物体登録モード」から登録してください。");
-      document.getElementById("modelSelect").value = "lite0";
-      return;
-    }
-    useCustomModel = true;
-    status.innerText = `ステータス: 登録した物体の検知(${activeCustomName})で探索中`;
-  } else {
-    useCustomModel = false;
-    if (!vision) return;
-    try {
-      objectDetector = await ObjectDetector.createFromOptions(vision, {
-        baseOptions: { modelAssetPath: modelPaths[selectedModel], delegate: "GPU" },
-        scoreThreshold: 0.3,
-        runningMode: runningMode
-      });
-    } catch (err) { console.error(err); }
-  }
-};
 
 window.updateTarget = function() {
   const inputVal = document.getElementById("targetObject").value.trim().toLowerCase();
@@ -147,8 +120,6 @@ window.updateTarget = function() {
 
 window.selectCustomTarget = function(name) {
   document.getElementById("targetObject").value = name;
-  document.getElementById("modelSelect").value = "custom";
-  window.changeModel();
   window.updateTarget();
   window.switchTab('search');
 };
@@ -212,7 +183,6 @@ window.clearCustomModel = function() {
   if (!confirm("登録した物体データとモデルを消去しますか？")) return;
   registeredEmbeddings = [];
   backgroundEmbeddings = [];
-  useCustomModel = false;
   activeCustomName = "";
   capturedObjects = [];
   capturedBackgrounds = [];
@@ -222,11 +192,6 @@ window.clearCustomModel = function() {
   document.getElementById("bgThumbnails").innerHTML = "";
   document.getElementById("registeredList").innerHTML = "";
   document.getElementById("quickSelectList").innerHTML = "";
-
-  const modelSelect = document.getElementById("modelSelect");
-  const customOption = modelSelect.querySelector('option[value="custom"]');
-  if (customOption) { customOption.remove(); }
-  modelSelect.value = "lite0";
 
   document.getElementById("registerName").value = "";
   document.getElementById("regStatus").innerText = "ステータス: すべての登録データを消去しました";
@@ -417,18 +382,8 @@ window.trainAndRegister = async function() {
       });
     }
     activeCustomName = name;
-    const modelSelect = document.getElementById("modelSelect");
-    
-    // 選択肢の表記を「登録した物体の検知」に変更
-    if (!document.querySelector('#modelSelect option[value="custom"]')) {
-      modelSelect.innerHTML += `<option value="custom">登録した物体の検知: ${name}</option>`;
-    } else {
-      document.querySelector('#modelSelect option[value="custom"]').innerText = `登録した物体の検知: ${name}`;
-    }
-    modelSelect.value = "custom";
-    useCustomModel = true;
 
-    document.getElementById("regStatus").innerText = `🎉 「${name}」の登録が完了しました！`;
+    document.getElementById("regStatus").innerText = `🎉 「${name}」の登録が完了しました！自動で検知モードになります`;
     document.getElementById("regStatus").style.color = "#00ff00";
 
     const registeredList = document.getElementById("registeredList");
@@ -449,7 +404,7 @@ window.trainAndRegister = async function() {
     if (quickBtn) {
       quickBtn.innerHTML = "";
       const btn = document.createElement("button");
-      btn.innerText = `🔍 ${name}`;
+      btn.innerText = `🔍 登録物体: ${name}`;
       btn.style.cssText = "padding: 4px 8px; background: #28a745; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;";
       btn.onclick = () => selectCustomTarget(name);
       quickBtn.appendChild(btn);
@@ -461,7 +416,7 @@ window.trainAndRegister = async function() {
     document.getElementById("bgCount").innerText = "0";
     document.getElementById("objThumbnails").innerHTML = "";
     document.getElementById("bgThumbnails").innerHTML = "";
-    alert(`「${name}」の登録が完了しました！`);
+    alert(`「${name}」の登録が完了しました！探索タブに戻って検知を試してください。`);
   } catch (err) {
     console.error(err);
     alert("登録中にエラーが発生しました: " + err.message);
@@ -478,7 +433,7 @@ function calculateCosineSimilarity(vecA, vecB) {
   return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
-// ================= リアルタイム推論ループ（ハイブリッド構成：YOLO枠 × MobileNet判定） =================
+// ================= リアルタイム推論ループ（登録物体の有無で自動切り替え） =================
 async function predictWebcam() {
   if (!webcamRunning) return;
 
@@ -497,8 +452,8 @@ async function predictWebcam() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       let foundTarget = false;
 
-      // 【「登録した物体の検知」モードの場合】YOLO（objectDetector）の枠を利用して、その中身をMobileNetで高精度判定
-      if (useCustomModel && registeredEmbeddings.length > 0 && mobilenetModel && objectDetector) {
+      // 【自動判定】物体が登録されている場合は「登録した物体の検知」モードを優先実行
+      if (registeredEmbeddings.length > 0 && mobilenetModel && objectDetector) {
         const detections = objectDetector.detectForVideo(video, performance.now());
 
         if (detections && detections.detections) {
@@ -567,7 +522,7 @@ async function predictWebcam() {
         }
 
       } else if (objectDetector) {
-        // 【通常モデルモードの場合】標準の80種類（カップやスマホなど）を探索
+        // 【標準モード】何も登録されていない場合は、通常の80種類（cupなど）を探索
         const detections = objectDetector.detectForVideo(video, performance.now());
         if (detections && detections.detections) {
           const scaleX = canvas.width / video.videoWidth;
@@ -604,10 +559,10 @@ async function predictWebcam() {
       }
 
       if (foundTarget) {
-        status.innerText = `🎉 登録した物体を発見しました！`;
+        status.innerText = `🎉 発見しました！`;
         status.style.color = "#00ff00";
       } else {
-        status.innerText = `🔍 探索中... (${useCustomModel ? activeCustomName : currentSearchWord})`;
+        status.innerText = `🔍 探索中... (${registeredEmbeddings.length > 0 ? activeCustomName : currentSearchWord})`;
         status.style.color = "#aaa";
       }
     } catch (e) { console.error(e); }
