@@ -8,7 +8,7 @@ let mobilenetModel = undefined;
 
 // 特徴量蓄積用データベース（物体と背景）
 let registeredEmbeddings = []; 
-let averageRegisteredEmbedding = null; // 精度向上のための平均ベクトル
+let averageRegisteredEmbedding = null; // 平均ベクトル（セントロイド）
 let backgroundEmbeddings = []; 
 let useCustomModel = false;
 let activeCustomName = "";
@@ -283,23 +283,17 @@ window.captureBackground = function() {
   document.getElementById("bgThumbnails").appendChild(img);
 };
 
-// ================= ✂️ 手動切り取り（クロップ）機能 =================
+// ================= ✂️ 手動クロップモード用 =================
 let capturedImageBitmap = null;
 let isDrawing = false;
 let startX = 0, startY = 0, endX = 0, endY = 0;
 
 window.captureAndCropMode = function() {
     const regVideo = document.getElementById('regVideo');
-    if (!regVideo) {
-        alert("登録用カメラの要素が見つかりません。");
-        return;
-    }
+    if (!regVideo) { alert("登録用カメラの要素が見つかりません。"); return; }
     const width = regVideo.videoWidth;
     const height = regVideo.videoHeight;
-    if (!width || !height) {
-        alert("カメラの映像がまだ準備できていません。「登録カメラ起動」を押して映像が映るのを確認してから押してください。");
-        return;
-    }
+    if (!width || !height) { alert("カメラの映像が準備できていません。"); return; }
     const tempCanvas = document.createElement('canvas');
     tempCanvas.width = width;
     tempCanvas.height = height;
@@ -324,7 +318,7 @@ window.captureAndCropMode = function() {
         cropSection.scrollIntoView({ behavior: 'smooth' });
         const regStatus = document.getElementById("regStatus");
         if (regStatus) {
-            regStatus.innerText = "ステータス: 写真が読み込まれました。範囲をドラッグしてください。";
+            regStatus.innerText = "ステータス: 範囲をドラッグして囲んでください。";
             regStatus.style.color = "#ffc107";
         }
     };
@@ -340,47 +334,24 @@ if (cropCanvas) {
         const clientY = e.touches ? e.touches[0].clientY : e.clientY;
         const scaleX = cropCanvas.width / rect.width;
         const scaleY = cropCanvas.height / rect.height;
-        return {
-            x: (clientX - rect.left) * scaleX,
-            y: (clientY - rect.top) * scaleY
-        };
+        return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
     }
-    cropCanvas.onmousedown = (e) => {
-        isDrawing = true;
-        const pos = getCursorPos(e);
-        startX = pos.x;
-        startY = pos.y;
-        endX = startX;
-        endY = startY;
-    };
-    cropCanvas.ontouchstart = (e) => {
-        isDrawing = true;
-        const pos = getCursorPos(e);
-        startX = pos.x;
-        startY = pos.y;
-        endX = startX;
-        endY = startY;
-    };
+    cropCanvas.onmousedown = (e) => { isDrawing = true; const pos = getCursorPos(e); startX = pos.x; startY = pos.y; endX = startX; endY = startY; };
+    cropCanvas.ontouchstart = (e) => { isDrawing = true; const pos = getCursorPos(e); startX = pos.x; startY = pos.y; endX = startX; endY = startY; };
     cropCanvas.onmousemove = (e) => {
         if (!isDrawing || !capturedImageBitmap) return;
-        const pos = getCursorPos(e);
-        endX = pos.x;
-        endY = pos.y;
+        const pos = getCursorPos(e); endX = pos.x; endY = pos.y;
         ctxCrop.clearRect(0, 0, cropCanvas.width, cropCanvas.height);
         ctxCrop.drawImage(capturedImageBitmap, 0, 0, cropCanvas.width, cropCanvas.height);
-        ctxCrop.strokeStyle = "#ff0055";
-        ctxCrop.lineWidth = 4;
+        ctxCrop.strokeStyle = "#ff0055"; ctxCrop.lineWidth = 4;
         ctxCrop.strokeRect(startX, startY, endX - startX, endY - startY);
     };
     cropCanvas.ontouchmove = (e) => {
         if (!isDrawing || !capturedImageBitmap) return;
-        const pos = getCursorPos(e);
-        endX = pos.x;
-        endY = pos.y;
+        const pos = getCursorPos(e); endX = pos.x; endY = pos.y;
         ctxCrop.clearRect(0, 0, cropCanvas.width, cropCanvas.height);
         ctxCrop.drawImage(capturedImageBitmap, 0, 0, cropCanvas.width, cropCanvas.height);
-        ctxCrop.strokeStyle = "#ff0055";
-        ctxCrop.lineWidth = 4;
+        ctxCrop.strokeStyle = "#ff0055"; ctxCrop.lineWidth = 4;
         ctxCrop.strokeRect(startX, startY, endX - startX, endY - startY);
     };
     cropCanvas.onmouseup = () => { isDrawing = false; };
@@ -392,24 +363,16 @@ window.confirmCrop = function() {
         alert("切り取りたい範囲をしっかり囲んでください！");
         return;
     }
-    const x = Math.min(startX, endX);
-    const y = Math.min(startY, endY);
-    const w = Math.abs(endX - startX);
-    const h = Math.abs(endY - startY);
+    const x = Math.min(startX, endX); const y = Math.min(startY, endY);
+    const w = Math.abs(endX - startX); const h = Math.abs(endY - startY);
     const cutCanvas = document.createElement('canvas');
-    cutCanvas.width = 224;
-    cutCanvas.height = 224;
+    cutCanvas.width = 224; cutCanvas.height = 224;
     const cutCtx = cutCanvas.getContext('2d');
     const scaleX = capturedImageBitmap.width / cropCanvas.width;
     const scaleY = capturedImageBitmap.height / cropCanvas.height;
-    cutCtx.drawImage(
-        capturedImageBitmap, 
-        x * scaleX, y * scaleY, w * scaleX, h * scaleY,
-        0, 0, 224, 224
-    );
+    cutCtx.drawImage(capturedImageBitmap, x * scaleX, y * scaleY, w * scaleX, h * scaleY, 0, 0, 224, 224);
     capturedObjects.push(cutCanvas);
-    const objCountElem = document.getElementById("objCount");
-    if (objCountElem) objCountElem.innerText = capturedObjects.length;
+    document.getElementById("objCount").innerText = capturedObjects.length;
     const thumbContainer = document.getElementById("objThumbnails");
     if (thumbContainer) {
         const img = document.createElement("img");
@@ -417,34 +380,23 @@ window.confirmCrop = function() {
         img.style.width = "40px"; img.style.height = "40px"; img.style.objectFit = "cover"; img.style.borderRadius = "4px";
         thumbContainer.appendChild(img);
     }
-    const cropSection = document.getElementById('crop-section');
-    if (cropSection) cropSection.style.display = "none";
-    const regStatus = document.getElementById("regStatus");
-    if (regStatus) {
-        regStatus.innerText = "ステータス: 手動で切り抜いた領域を物体データに追加しました！";
-        regStatus.style.color = "#00ff00";
-    }
+    document.getElementById('crop-section').style.display = "none";
+    document.getElementById("regStatus").innerText = "ステータス: 手動クロップ領域を追加しました！";
+    document.getElementById("regStatus").style.color = "#00ff00";
 };
 
 window.cancelCrop = function() {
-    const cropSection = document.getElementById('crop-section');
-    if (cropSection) cropSection.style.display = "none";
+    document.getElementById('crop-section').style.display = "none";
 };
 
-// ⚡ AI特徴量ベクトル抽出・登録処理（平均ベクトル計算の統合による高精度化）
+// ⚡ AI特徴量ベクトル抽出・平均化登録処理
 window.trainAndRegister = async function() {
   const name = document.getElementById("registerName").value.trim().toLowerCase();
   if (!name) { alert("登録する物体名を入力してください！"); return; }
-  if (capturedObjects.length === 0) {
-    alert("物体（クラス0）を1枚以上撮影してください！");
-    return;
-  }
-  if (!mobilenetModel) {
-    alert("MobileNetモデルがまだロードされています。少し待ってから再度お試しください。");
-    return;
-  }
+  if (capturedObjects.length === 0) { alert("物体を1枚以上撮影してください！"); return; }
+  if (!mobilenetModel) { alert("MobileNetモデルがロード中です。"); return; }
 
-  document.getElementById("regStatus").innerText = "⚡ AI特徴量を解析・高精度平均化中...";
+  document.getElementById("regStatus").innerText = "⚡ AI特徴量を高精度平均化中...";
   document.getElementById("regStatus").style.color = "#ffc107";
 
   try {
@@ -467,18 +419,14 @@ window.trainAndRegister = async function() {
       });
     }
 
-    // ⭐ 複数サンプルの平均ベクトル（Centroid）を計算して精度を飛躍的に向上
+    // 平均ベクトル（セントロイド）計算
     if (registeredEmbeddings.length > 0) {
       const dim = registeredEmbeddings[0].length;
       averageRegisteredEmbedding = new Array(dim).fill(0);
       for (let emb of registeredEmbeddings) {
-        for (let i = 0; i < dim; i++) {
-          averageRegisteredEmbedding[i] += emb[i];
-        }
+        for (let i = 0; i < dim; i++) { averageRegisteredEmbedding[i] += emb[i]; }
       }
-      for (let i = 0; i < dim; i++) {
-        averageRegisteredEmbedding[i] /= registeredEmbeddings.length;
-      }
+      for (let i = 0; i < dim; i++) { averageRegisteredEmbedding[i] /= registeredEmbeddings.length; }
     }
 
     activeCustomName = name;
@@ -491,14 +439,13 @@ window.trainAndRegister = async function() {
     modelSelect.value = "custom";
     useCustomModel = true;
 
-    document.getElementById("regStatus").innerText = `🎉 「${name}」のAI登録（高精度平均化）が完了しました！`;
+    document.getElementById("regStatus").innerText = `🎉 「${name}」のAI高精度登録が完了しました！`;
     document.getElementById("regStatus").style.color = "#00ff00";
 
     const registeredList = document.getElementById("registeredList");
     registeredList.innerHTML = "";
     const container = document.createElement("div");
-    container.style.textAlign = "center";
-    container.style.cursor = "pointer";
+    container.style.textAlign = "center"; container.style.cursor = "pointer";
     container.onclick = () => selectCustomTarget(name);
 
     const thumb = document.createElement("img");
@@ -521,8 +468,7 @@ window.trainAndRegister = async function() {
       quickBtn.appendChild(btn);
     }
 
-    capturedObjects = [];
-    capturedBackgrounds = [];
+    capturedObjects = []; capturedBackgrounds = [];
     document.getElementById("objCount").innerText = "0";
     document.getElementById("bgCount").innerText = "0";
     document.getElementById("objThumbnails").innerHTML = "";
@@ -531,14 +477,12 @@ window.trainAndRegister = async function() {
     alert(`「${name}」の登録が完了しました！`);
   } catch (err) {
     console.error(err);
-    alert("登録中にエラーが発生しました: " + err.message);
+    alert("登録エラー: " + err.message);
   }
 };
 
 function calculateCosineSimilarity(vecA, vecB) {
-  let dotProduct = 0;
-  let normA = 0;
-  let normB = 0;
+  let dotProduct = 0, normA = 0, normB = 0;
   for (let i = 0; i < vecA.length; i++) {
     dotProduct += vecA[i] * vecB[i];
     normA += vecA[i] * vecA[i];
@@ -547,7 +491,7 @@ function calculateCosineSimilarity(vecA, vecB) {
   return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
-// ================= リアルタイム推論ループ（平均ベクトルによる高精度判定） =================
+// ================= AI並みの動的マルチ領域スキャン＆高精度推論ループ =================
 async function predictWebcam() {
   if (!webcamRunning) return;
   if (video.videoWidth > 0 && video.videoHeight > 0) {
@@ -566,65 +510,63 @@ async function predictWebcam() {
       let foundTarget = false;
 
       if (useCustomModel && averageRegisteredEmbedding && mobilenetModel) {
-        const checkCanvas = document.createElement("canvas");
-        checkCanvas.width = 50;
-        checkCanvas.height = 50;
-        const checkCtx = checkCanvas.getContext("2d");
-        checkCtx.drawImage(video, 0, 0, 50, 50);
-        const imgData = checkCtx.getImageData(0, 0, 50, 50).data;
-        let totalBrightness = 0;
-        for (let i = 0; i < imgData.length; i += 4) {
-          totalBrightness += (imgData[i] * 0.299 + imgData[i+1] * 0.587 + imgData[i+2] * 0.114);
-        }
-        const avgBrightness = totalBrightness / (imgData.length / 4);
+        const vW = video.videoWidth;
+        const vH = video.videoHeight;
 
-        if (avgBrightness > 25) {
-          const cropCanvas = document.createElement("canvas");
-          cropCanvas.width = 224;
-          cropCanvas.height = 224;
-          const cropCtx = cropCanvas.getContext("2d");
-          const vW = video.videoWidth;
-          const vH = video.videoHeight;
-          const sW = vW * 0.6;
-          const sH = vH * 0.6;
-          const sX = vW * 0.2;
-          const sY = vH * 0.2;
-          cropCtx.drawImage(video, sX, sY, sW, sH, 0, 0, 224, 224);
+        if (vW > 0 && vH > 0) {
+          // ⭐ AI並みのマルチ領域スキャン（画面の複数ポジションを動的に切り出してチェック）
+          // 中央、左上、右上、左下、右下の5箇所のエリア候補をスキャン
+          const regions = [
+            { x: vW * 0.2, y: vH * 0.2, w: vW * 0.6, h: vH * 0.6, dx: canvas.width * 0.2, dy: canvas.height * 0.2, dw: canvas.width * 0.6, dh: canvas.height * 0.6 }, // 中央
+            { x: 0, y: 0, w: vW * 0.5, h: vH * 0.5, dx: 0, dy: 0, dw: canvas.width * 0.5, dh: canvas.height * 0.5 }, // 左上
+            { x: vW * 0.5, y: 0, w: vW * 0.5, h: vH * 0.5, dx: canvas.width * 0.5, dy: 0, dw: canvas.width * 0.5, dh: canvas.height * 0.5 }, // 右上
+            { x: 0, y: vH * 0.5, w: vW * 0.5, h: vH * 0.5, dx: 0, dy: canvas.height * 0.5, dw: canvas.width * 0.5, dh: canvas.height * 0.5 }, // 左下
+            { x: vW * 0.5, y: vH * 0.5, w: vW * 0.5, h: vH * 0.5, dx: canvas.width * 0.5, dy: canvas.height * 0.5, dw: canvas.width * 0.5, dh: canvas.height * 0.5 }  // 右下
+          ];
 
-          const currentEmbedding = tf.tidy(() => {
-            const tensor = tf.browser.fromPixels(cropCanvas).toFloat().expandDims(0);
-            const embedding = mobilenetModel.infer(tensor, true);
-            return Array.from(embedding.dataSync());
-          });
+          let bestMatchScore = 0;
+          let bestRegion = null;
 
-          // ⭐ 平均ベクトルとの類似度を計算（ノイズに強く安定した高精度判定）
-          const avgSimilarity = calculateCosineSimilarity(currentEmbedding, averageRegisteredEmbedding);
+          for (let reg of regions) {
+            const cropCanvas = document.createElement("canvas");
+            cropCanvas.width = 224; cropCanvas.height = 224;
+            const cropCtx = cropCanvas.getContext("2d");
+            cropCtx.drawImage(video, reg.x, reg.y, reg.w, reg.h, 0, 0, 224, 224);
 
-          // 個別の登録サンプルとの最高類似度も併せてチェック
-          let maxObjSimilarity = avgSimilarity;
-          for (let regEmb of registeredEmbeddings) {
-            const similarity = calculateCosineSimilarity(currentEmbedding, regEmb);
-            if (similarity > maxObjSimilarity) {
-              maxObjSimilarity = similarity;
+            const currentEmbedding = tf.tidy(() => {
+              const tensor = tf.browser.fromPixels(cropCanvas).toFloat().expandDims(0);
+              const embedding = mobilenetModel.infer(tensor, true);
+              return Array.from(embedding.dataSync());
+            });
+
+            const avgSimilarity = calculateCosineSimilarity(currentEmbedding, averageRegisteredEmbedding);
+            let maxObjSimilarity = avgSimilarity;
+            for (let rEmb of registeredEmbeddings) {
+              const sim = calculateCosineSimilarity(currentEmbedding, rEmb);
+              if (sim > maxObjSimilarity) maxObjSimilarity = sim;
+            }
+
+            let maxBgSimilarity = 0;
+            for (let bgEmb of backgroundEmbeddings) {
+              const bgSim = calculateCosineSimilarity(currentEmbedding, bgEmb);
+              if (bgSim > maxBgSimilarity) maxBgSimilarity = bgSim;
+            }
+
+            const threshold = 0.3; // しきい値
+            if (maxObjSimilarity >= threshold && maxObjSimilarity > maxBgSimilarity) {
+              if (maxObjSimilarity > bestMatchScore) {
+                bestMatchScore = maxObjSimilarity;
+                bestRegion = reg;
+              }
             }
           }
 
-          let maxBgSimilarity = 0;
-          for (let bgEmb of backgroundEmbeddings) {
-            const bgSimilarity = calculateCosineSimilarity(currentEmbedding, bgEmb);
-            if (bgSimilarity > maxBgSimilarity) {
-              maxBgSimilarity = bgSimilarity;
-            }
-          }
-
-          // しきい値 0.3（30%）
-          const threshold = 0.3;
-          if (maxObjSimilarity >= threshold && maxObjSimilarity > maxBgSimilarity) {
+          if (bestRegion) {
             foundTarget = true;
-            const boxX = canvas.width * 0.2;
-            const boxY = canvas.height * 0.2;
-            const boxW = canvas.width * 0.6;
-            const boxH = canvas.height * 0.6;
+            const boxX = bestRegion.dx;
+            const boxY = bestRegion.dy;
+            const boxW = bestRegion.dw;
+            const boxH = bestRegion.dh;
 
             ctx.strokeStyle = "#00ff00";
             ctx.lineWidth = 5;
@@ -633,7 +575,7 @@ async function predictWebcam() {
             ctx.fillRect(boxX, boxY, boxW, 35);
             ctx.fillStyle = "#00ff00";
             ctx.font = "bold 16px sans-serif";
-            ctx.fillText(`✨ ${activeCustomName} (${Math.round(maxObjSimilarity * 100)}%)`, boxX + 10, boxY + 23);
+            ctx.fillText(`✨ ${activeCustomName} (${Math.round(bestMatchScore * 100)}%)`, boxX + 10, boxY + 23);
 
             const now = Date.now();
             if (now - lastSaveTime > 3000) {
@@ -681,7 +623,7 @@ async function predictWebcam() {
         status.innerText = `🎉 発見しました！`;
         status.style.color = "#00ff00";
       } else {
-        status.innerText = `🔍 探索中...`;
+        status.innerText = `🔍 AI探索中...`;
         status.style.color = "#aaa";
       }
     } catch (e) { console.error(e); }
