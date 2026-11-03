@@ -140,39 +140,108 @@ window.changeModel = async function() {
   }
 };
 
+// COCOデータセット一覧（日本語・英語対応リスト）
+const cocoItems = [
+  { en: "person", jp: "ヒト" }, { en: "bicycle", jp: "ジテンシャ" }, { en: "car", jp: "クルマ" },
+  { en: "motorcycle", jp: "バイク" }, { en: "airplane", jp: "ヒコウキ" }, { en: "bus", jp: "バス" },
+  { en: "train", jp: "デンシャ" }, { en: "truck", jp: "トラック" }, { en: "boat", jp: "ボート" },
+  { en: "traffic light", jp: "シンゴウ" }, { en: "fire hydrant", jp: "ショウカセン" }, { en: "stop sign", jp: "イチジテイシ" },
+  { en: "parking meter", jp: "パーキングメーター" }, { en: "bench", jp: "ベンチ" }, { en: "bird", jp: "トリ" },
+  { en: "cat", jp: "ネコ" }, { en: "dog", jp: "イヌ" }, { en: "horse", jp: "ウマ" },
+  { en: "sheep", jp: "ヒツジ" }, { en: "cow", jp: "ウシ" }, { en: "elephant", jp: "ゾウ" },
+  { en: "bear", jp: "クマ" }, { en: "zebra", jp: "シマウマ" }, { en: "giraffe", jp: "キリン" },
+  { en: "backpack", jp: "リュック" }, { en: "umbrella", jp: "カサ" }, { en: "handbag", jp: "ハンドバッグ" },
+  { en: "tie", jp: "ネクタイ" }, { en: "suitcase", jp: "スーツケース" }, { en: "frisbee", jp: "フリスビー" },
+  { en: "skis", jp: "スキー" }, { en: "snowboard", jp: "スノーボード" }, { en: "sports ball", jp: "ボール" },
+  { en: "kite", jp: "タコ" }, { en: "baseball bat", jp: "バット" }, { en: "baseball glove", jp: "グローブ" },
+  { en: "skateboard", jp: "スケートボード" }, { en: "surfboard", jp: "サーフボード" }, { en: "tennis racket", jp: "ラケット" },
+  { en: "bottle", jp: "ボトル" }, { en: "wine glass", jp: "ワイングラス" }, { en: "cup", jp: "コップ" },
+  { en: "fork", jp: "フォーク" }, { en: "knife", jp: "ナイフ" }, { en: "spoon", jp: "スプーン" },
+  { en: "bowl", jp: "ボウル" }, { en: "banana", jp: "バナナ" }, { en: "apple", jp: "リンゴ" },
+  { en: "sandwich", jp: "サンドイッチ" }, { en: "orange", jp: "オレンジ" }, { en: "broccoli", jp: "ブロッコリー" },
+  { en: "carrot", jp: "ニンジン" }, { en: "hot dog", jp: "ホットドッグ" }, { en: "pizza", jp: "ピザ" },
+  { en: "donut", jp: "ドーナツ" }, { en: "cake", jp: "ケーキ" }, { en: "chair", jp: "イス" },
+  { en: "couch", jp: "ソファ" }, { en: "potted plant", jp: "ショクブツ" }, { en: "bed", jp: "ベッド" },
+  { en: "dining table", jp: "テーブル" }, { en: "toilet", jp: "トイレ" }, { en: "tv", jp: "テレビ" },
+  { en: "laptop", jp: "パソコン" }, { en: "mouse", jp: "マウス" }, { en: "remote", jp: "リモコン" },
+  { en: "keyboard", jp: "キーボード" }, { en: "cell phone", jp: "スマホ" }, { en: "microwave", jp: "レンジ" },
+  { en: "oven", jp: "オーブン" }, { en: "toaster", jp: "トースター" }, { en: "sink", jp: "シンク" },
+  { en: "refrigerator", jp: "レイゾウコ" }, { en: "book", jp: "ホン" }, { en: "clock", jp: "トケイ" },
+  { en: "vase", jp: "カビン" }, { en: "scissors", jp: "ハサミ" }, { en: "teddy bear", jp: "ヌイグルミ" },
+  { en: "hair drier", jp: "ドライヤー" }, { en: "toothbrush", jp: "ハブラシ" }
+];
+
+// 🔽 入力に応じてカスタムサジェストを表示する関数
+window.filterSuggestions = function() {
+  const input = document.getElementById("targetObject");
+  const query = input.value.trim().toLowerCase();
+  const box = document.getElementById("customSuggestions");
+
+  if (!query) {
+    box.style.display = "none";
+    return;
+  }
+
+  const matched = cocoItems.filter(item => 
+    item.en.toLowerCase().includes(query) || item.jp.includes(query)
+  );
+
+  if (matched.length === 0) {
+    box.style.display = "none";
+    return;
+  }
+
+  box.innerHTML = "";
+  matched.forEach(item => {
+    const div = document.createElement("div");
+    div.style.cssText = "padding: 8px 10px; font-size: 13px; color: #fff; cursor: pointer; border-bottom: 1px solid #333; text-align: left;";
+    div.innerHTML = `${item.jp} <span style="color: #aaa; font-size: 11px;">(${item.en})</span>`;
+    div.onmousedown = (e) => {
+      e.preventDefault(); // フォーカスが外れるのを防ぐ
+      input.value = item.en;
+      box.style.display = "none";
+      window.updateTarget();
+    };
+    box.appendChild(div);
+  });
+
+  box.style.display = "block";
+};
+
 // 🌐 日本語→英語変換対応のターゲット更新関数
 window.updateTarget = function() {
+  document.getElementById("customSuggestions").style.display = "none";
   let inputVal = document.getElementById("targetObject").value.trim().toLowerCase();
   if (!inputVal) { alert("探すものを入力してください！"); return; }
 
   // 日本語入力に対応する辞書マップ
   const jpToEnMap = {
-    "人": "person", "ひと": "person",
-    "自転車": "bicycle", "チャリ": "bicycle",
-    "車": "car", "くるま": "car",
+    "人": "person", "ひと": "person", "ヒト": "person",
+    "自転車": "bicycle", "チャリ": "bicycle", "ジテンシャ": "bicycle",
+    "車": "car", "くるま": "car", "クルマ": "car",
     "オートバイ": "motorcycle", "バイク": "motorcycle",
-    "飛行機": "airplane",
+    "飛行機": "airplane", "ヒコウキ": "airplane",
     "バス": "bus",
-    "電車": "train", "列車": "train",
-    "トラック": "truck",
+    "電車": "train", "列車": "train", "デンシャ": "train",
+    "トラック": "トラック",
     "ボート": "boat", "船": "boat",
-    "信号機": "traffic light", "信号": "traffic light",
-    "消火栓": "fire hydrant",
-    "一時停止標識": "stop sign",
+    "信号機": "traffic light", "信号": "traffic light", "シンゴウ": "traffic light",
+    "消火栓": "fire hydrant", "ショウカセン": "fire hydrant",
+    "一時停止標識": "stop sign", "イチジテイシ": "stop sign",
     "パーキングメーター": "parking meter",
     "ベンチ": "bench",
-    "鳥": "bird", "とり": "bird",
-    "猫": "cat", "ねこ": "cat",
-    "犬": "dog", "いぬ": "dog",
-    "馬": "horse", "うま": "horse",
-    "羊": "sheep", "ひつじ": "sheep",
-    "牛": "cow", "うし": "cow",
-    "象": "elephant", "ぞう": "elephant",
-    "熊": "bear", "くま": "bear",
+    "鳥": "bird", "とり": "bird", "トリ": "bird",
+    "猫": "cat", "ねこ": "cat", "ネコ": "cat",
+    "犬": "dog", "いぬ": "dog", "イヌ": "dog",
+    "馬": "horse", "うま": "horse", "ウマ": "horse",
+    "羊": "sheep", "ひつじ": "sheep", "ヒツジ": "sheep",
+    "牛": "cow", "うし": "cow", "ウシ": "cow",
+    "象": "elephant", "ぞう": "elephant", "ゾウ": "elephant",
+    "熊": "bear", "くま": "bear", "クマ": "bear",
     "シマウマ": "zebra",
     "キリン": "giraffe",
     "リュック": "backpack", "リュックサック": "backpack",
-    "傘": "umbrella", "かさ": "umbrella",
+    "傘": "umbrella", "かさ": "umbrella", "カサ": "umbrella",
     "ハンドバッグ": "handbag",
     "ネクタイ": "tie",
     "スーツケース": "suitcase",
@@ -180,7 +249,7 @@ window.updateTarget = function() {
     "スキー": "skis",
     "スノーボード": "snowboard",
     "ボール": "sports ball", "スポーツボール": "sports ball",
-    "凧": "kite", "たこ": "kite",
+    "凧": "kite", "たこ": "kite", "タコ": "kite",
     "野球バット": "baseball bat", "バット": "baseball bat",
     "野球グローブ": "baseball glove", "グローブ": "baseball glove",
     "スケートボード": "skateboard",
@@ -198,18 +267,18 @@ window.updateTarget = function() {
     "サンドイッチ": "sandwich",
     "オレンジ": "orange",
     "ブロッコリー": "broccoli",
-    "にんじん": "carrot", "人参": "carrot",
+    "にんじん": "carrot", "人参": "carrot", "ニンジン": "carrot",
     "ホットドッグ": "hot dog",
     "ピザ": "pizza",
     "ドーナツ": "donut",
     "ケーキ": "cake",
-    "椅子": "chair", "いす": "chair",
+    "椅子": "chair", "いす": "chair", "イス": "chair",
     "ソファ": "couch", "ソファー": "couch",
-    "植木鉢": "potted plant", "植物": "potted plant",
+    "植木鉢": "potted plant", "植物": "potted plant", "ショクブツ": "potted plant",
     "ベッド": "bed",
     "ダイニングテーブル": "dining table", "テーブル": "dining table", "机": "dining table",
     "トイレ": "toilet",
-    "テレビ": "tv", "tv": "tv",
+    "テレビ": "tv",
     "ノートパソコン": "laptop", "パソコン": "laptop", "PC": "laptop",
     "マウス": "mouse",
     "リモコン": "remote",
@@ -219,14 +288,14 @@ window.updateTarget = function() {
     "オーブン": "oven",
     "トースター": "toaster",
     "シンク": "sink", "流し台": "sink",
-    "冷蔵庫": "refrigerator",
-    "本": "book", "書籍": "book",
-    "時計": "clock", "置時計": "clock", "掛け時計": "clock",
-    "花瓶": "vase",
+    "冷蔵庫": "refrigerator", "レイゾウコ": "refrigerator",
+    "本": "book", "書籍": "book", "ホン": "book",
+    "時計": "clock", "置時計": "clock", "掛け時計": "clock", "トケイ": "clock",
+    "花瓶": "vase", "カビン": "vase",
     "はさみ": "scissors", "ハサミ": "scissors",
-    "ぬいぐるみ": "teddy bear",
+    "ぬいぐるみ": "teddy bear", "ヌイグルミ": "teddy bear",
     "ドライヤー": "hair drier", "ヘアードライヤー": "hair drier",
-    "歯ブラシ": "toothbrush"
+    "歯ブラシ": "toothbrush", "ハブラシ": "toothbrush"
   };
 
   // 入力が日本語辞書にあれば英語に自動変換
