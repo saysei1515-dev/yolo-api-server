@@ -11,6 +11,9 @@ let useCustomModel = false;
 let activeCustomName = "";
 let currentAspect = 'square'; // ガイド枠の比率
 
+// 🔴 追加：現在編集中のカスタム物体のインデックス（nullなら新規登録モード）
+let editingObjectIndex = null;
+
 const video = document.getElementById("video");
 const canvas = document.getElementById("outputCanvas");
 const ctx = canvas.getContext("2d");
@@ -213,6 +216,7 @@ window.clearCustomModel = function() {
   customObjects = [];
   useCustomModel = false;
   activeCustomName = "";
+  editingObjectIndex = null;
   capturedObjects = [];
   capturedBackgrounds = [];
   document.getElementById("objCount").innerText = "0";
@@ -236,6 +240,13 @@ window.clearCustomModel = function() {
 window.removeCustomObject = function(index) {
   const removedObj = customObjects[index];
   customObjects.splice(index, 1);
+
+  if (editingObjectIndex === index) {
+    editingObjectIndex = null;
+    document.getElementById("registerName").value = "";
+  } else if (editingObjectIndex !== null && editingObjectIndex > index) {
+    editingObjectIndex--;
+  }
 
   if (customObjects.length === 0) {
     useCustomModel = false;
@@ -313,100 +324,51 @@ function updateBackgroundThumbnailsUI() {
   });
 }
 
-// 🔴 【追加機能】既存の登録済み物体に、後からデータ（物体/背景）を追加する関数
-window.addExtraObjectData = async function(index, type) {
-  const regVideo = document.getElementById("regVideo");
-  if (!regVideo || !regVideo.srcObject) {
-    alert("先に「登録カメラ起動」ボタンを押してカメラを起動してください！");
-    return;
-  }
-  if (!mobilenetModel) {
-    alert("MobileNetモデルがまだロードされていません。");
-    return;
-  }
-
-  const canvas = cropGuideArea();
-  if (!canvas) {
-    alert("ガイド枠内の切り取りに失敗しました。");
-    return;
-  }
-
-  document.getElementById("regStatus").innerText = "⚡ 追加データを解析中...";
+// 🔴 【追加機能】登録済み物体の写真をタップしたときの処理（編集モードに切り替え）
+window.editCustomObject = function(index) {
+  editingObjectIndex = index;
+  const obj = customObjects[index];
+  document.getElementById("registerName").value = obj.name;
+  document.getElementById("regStatus").innerText = `✏️ 「${obj.name}」の編集モードです。追加する写真/背景を撮影して学習ボタンを押してください。`;
   document.getElementById("regStatus").style.color = "#ffc107";
-
-  try {
-    let newEmbedding = null;
-    tf.tidy(() => {
-      const tensor = tf.browser.fromPixels(canvas).toFloat().expandDims(0);
-      const embedding = mobilenetModel.infer(tensor, true);
-      newEmbedding = Array.from(embedding.dataSync());
-    });
-
-    const targetObj = customObjects[index];
-    if (type === 'object') {
-      targetObj.embeddings.push(newEmbedding);
-      document.getElementById("regStatus").innerText = `➕ 「${targetObj.name}」に物体データを追加しました！`;
-    } else if (type === 'background') {
-      targetObj.backgrounds.push(newEmbedding);
-      document.getElementById("regStatus").innerText = `🖼️ 「${targetObj.name}」に背景データを追加しました！`;
-    }
-    document.getElementById("regStatus").style.color = "#00ff00";
-    alert(`「${targetObj.name}」に新しいデータを追加しました！`);
-  } catch (err) {
-    console.error(err);
-    alert("データ追加中にエラーが発生しました: " + err.message);
-  }
+  
+  // 編集しやすいようにページトップ付近（名前入力欄）へスムーズスクロール
+  document.getElementById("registerName").scrollIntoView({ behavior: 'smooth' });
 };
 
-// 登録リストのUI更新と追加ボタン・×ボタン描画
+// 登録リストのUI更新と×ボタン、タップ編集対応描画
 function updateRegisteredListUI() {
   const registeredList = document.getElementById("registeredList");
   registeredList.innerHTML = "";
 
   customObjects.forEach((obj, idx) => {
     const container = document.createElement("div");
-    container.style.cssText = "position: relative; display: inline-block; text-align: center; margin-right: 15px; background: #222; padding: 8px; border-radius: 8px;";
+    container.style.cssText = "position: relative; display: inline-block; text-align: center; margin-right: 10px;";
     
-    // サムネイル画像
     const thumb = document.createElement("img");
     thumb.src = obj.thumbnail;
-    thumb.style.cssText = "width: 70px; height: 70px; object-fit: cover; border-radius: 6px; border: 2px solid #28a745; cursor: pointer; display: block; margin: 0 auto;";
-    thumb.onclick = () => selectCustomTarget(obj.name);
+    // 編集中のものは枠の色を変えて分かりやすくする
+    const isEditing = (editingObjectIndex === idx);
+    thumb.style.cssText = `width: 70px; height: 70px; object-fit: cover; border-radius: 6px; border: 3px solid ${isEditing ? '#ffc107' : '#28a745'}; cursor: pointer;`;
+    
+    // 🔴 タップで編集モードに入るように変更
+    thumb.onclick = () => editCustomObject(idx);
     container.appendChild(thumb);
 
-    // ×ボタン（個別削除）
     const deleteBtn = document.createElement("button");
     deleteBtn.innerText = "×";
-    deleteBtn.style.cssText = "position: absolute; top: -3px; right: -3px; background: #dc3545; color: #fff; border: none; border-radius: 50%; width: 20px; height: 20px; font-size: 12px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center;";
+    deleteBtn.style.cssText = "position: absolute; top: -5px; right: -5px; background: #dc3545; color: #fff; border: none; border-radius: 50%; width: 20px; height: 20px; font-size: 12px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center;";
     deleteBtn.onclick = (e) => {
       e.stopPropagation();
       removeCustomObject(idx);
     };
     container.appendChild(deleteBtn);
 
-    // 名前ラベル
     const lbl = document.createElement("div");
-    lbl.innerText = obj.name; 
-    lbl.style.cssText = "font-size: 11px; color: #fff; margin-top: 4px; font-weight: bold;";
+    lbl.innerText = obj.name + (isEditing ? " (編集中)" : ""); 
+    lbl.style.cssText = `font-size: 10px; color: ${isEditing ? '#ffc107' : '#fff'}; margin-top: 2px; font-weight: ${isEditing ? 'bold' : 'normal'};`;
     container.appendChild(lbl);
 
-    // 🔴 【追加機能UI】後から写真を追加するボタン群
-    const btnGroup = document.createElement("div");
-    btnGroup.style.cssText = "display: flex; gap: 4px; margin-top: 6px;";
-    
-    const addObjBtn = document.createElement("button");
-    addObjBtn.innerText = "➕物体";
-    addObjBtn.style.cssText = "flex: 1; padding: 3px 2px; font-size: 10px; background: #ffc107; color: #000; border: none; border-radius: 3px; font-weight: bold; cursor: pointer;";
-    addObjBtn.onclick = () => addExtraObjectData(idx, 'object');
-    btnGroup.appendChild(addObjBtn);
-
-    const addBgBtn = document.createElement("button");
-    addBgBtn.innerText = "➕背景";
-    addBgBtn.style.cssText = "flex: 1; padding: 3px 2px; font-size: 10px; background: #6c757d; color: #fff; border: none; border-radius: 3px; font-weight: bold; cursor: pointer;";
-    addBgBtn.onclick = () => addExtraObjectData(idx, 'background');
-    btnGroup.appendChild(addBgBtn);
-
-    container.appendChild(btnGroup);
     registeredList.appendChild(container);
   });
 }
@@ -559,14 +521,14 @@ window.cancelCrop = function() {
     document.getElementById('crop-section').style.display = "none";
 };
 
-// ⚡ AI特徴量ベクトル抽出・登録処理
+// ⚡ AI特徴量ベクトル抽出・登録 / 追加処理
 window.trainAndRegister = async function() {
   const name = document.getElementById("registerName").value.trim().toLowerCase();
   if (!name) { alert("登録する物体名を入力してください！"); return; }
   if (capturedObjects.length === 0) { alert("物体を1枚以上撮影してください！"); return; }
   if (!mobilenetModel) { alert("MobileNetモデルがまだロードされていません。"); return; }
 
-  document.getElementById("regStatus").innerText = "⚡ AI特徴量を解析・登録中...";
+  document.getElementById("regStatus").innerText = "⚡ AI特徴量を解析中...";
   document.getElementById("regStatus").style.color = "#ffc107";
   try {
     let objEmbeddings = [];
@@ -587,13 +549,33 @@ window.trainAndRegister = async function() {
       });
     }
 
-    const newObjectData = {
-      name: name,
-      embeddings: objEmbeddings,
-      backgrounds: bgEmbeddings,
-      thumbnail: capturedObjects[0].dataUrl
-    };
-    customObjects.push(newObjectData);
+    if (editingObjectIndex !== null) {
+      // 🔴 編集モード（既存の物体にデータを追加）
+      const targetObj = customObjects[editingObjectIndex];
+      targetObj.name = name; // 名前変更にも対応
+      targetObj.embeddings.push(...objEmbeddings);
+      targetObj.backgrounds.push(...bgEmbeddings);
+      
+      // もし新しい物体写真があればサムネイルも更新
+      if (capturedObjects.length > 0) {
+        targetObj.thumbnail = capturedObjects[0].dataUrl;
+      }
+
+      document.getElementById("regStatus").innerText = `🎉 「${name}」にデータを追加しました！`;
+      alert(`「${name}」に新しいデータを追加しました！`);
+      editingObjectIndex = null; // 編集モード終了
+    } else {
+      // 🟢 新規登録モード
+      const newObjectData = {
+        name: name,
+        embeddings: objEmbeddings,
+        backgrounds: bgEmbeddings,
+        thumbnail: capturedObjects[0].dataUrl
+      };
+      customObjects.push(newObjectData);
+      document.getElementById("regStatus").innerText = `🎉 「${name}」の登録が完了しました！`;
+      alert(`「${name}」の登録が完了しました！`);
+    }
 
     activeCustomName = name;
     const modelSelect = document.getElementById("modelSelect");
@@ -603,7 +585,6 @@ window.trainAndRegister = async function() {
     modelSelect.value = "custom";
     useCustomModel = true;
 
-    document.getElementById("regStatus").innerText = `🎉 「${name}」の登録が完了しました！`;
     document.getElementById("regStatus").style.color = "#00ff00";
 
     updateRegisteredListUI();
@@ -615,10 +596,9 @@ window.trainAndRegister = async function() {
     document.getElementById("objThumbnails").innerHTML = "";
     document.getElementById("bgThumbnails").innerHTML = "";
     document.getElementById("registerName").value = "";
-    alert(`「${name}」の登録が完了しました！`);
   } catch (err) {
     console.error(err);
-    alert("登録中にエラーが発生しました: " + err.message);
+    alert("登録・追加中にエラーが発生しました: " + err.message);
   }
 };
 
