@@ -5,23 +5,31 @@ let runningMode = "VIDEO";
 let webcamRunning = false;
 let vision = undefined;
 let mobilenetModel = undefined;
-let currentModelType = "lite0";
 
+// 特徴量蓄積用データベース（物体と背景）
 let registeredEmbeddings = []; 
 let backgroundEmbeddings = []; 
 let useCustomModel = false;
 let activeCustomName = "";
-let currentAspect = 'square'; 
+let currentAspect = 'square'; // ガイド枠の比率
 
-let video, canvas, ctx, statusEl, startButton, stopButton, connStatusEl;
+const video = document.getElementById("video");
+const canvas = document.getElementById("outputCanvas");
+const ctx = canvas.getContext("2d");
+const status = document.getElementById("status");
+const startButton = document.getElementById("startButton");
+const stopButton = document.getElementById("stopButton");
+const connStatus = document.getElementById("connectionStatus");
+
 let lastVideoTime = -1;
 let currentSearchWord = "cup";
 let lastSaveTime = 0; 
 
-let peer = null;
+// PeerJS初期化
+const peer = new Peer();
 let conn = null;
-let pcYoloDetections = []; // PCから送られてきたYOLO結果格納用
 
+// 撮影データ一時保存用配列
 let capturedObjects = [];
 let capturedBackgrounds = [];
 
@@ -30,149 +38,92 @@ const modelPaths = {
   lite2: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite2/float16/1/efficientdet_lite2.tflite"
 };
 
-window.addEventListener('DOMContentLoaded', () => {
-  video = document.getElementById("video");
-  canvas = document.getElementById("outputCanvas");
-  if (canvas) ctx = canvas.getContext("2d");
-  statusEl = document.getElementById("status");
-  startButton = document.getElementById("startButton");
-  stopButton = document.getElementById("stopButton");
-  connStatusEl = document.getElementById("connectionStatus");
-
-  try {
-    peer = new Peer();
-    peer.on('error', (err) => { console.error("PeerJSエラー:", err); });
-    peer.on('call', (call) => {
-      call.answer();
-      call.on('stream', (remoteStream) => {
-        if (video) video.srcObject = remoteStream;
-        webcamRunning = true;
-        if (startButton) startButton.style.display = "none";
-        if (stopButton) stopButton.style.display = "block";
-        if (statusEl) {
-          statusEl.innerText = `ステータス: 探索中... (${currentSearchWord})`;
-          statusEl.style.color = "#00ff00";
-        }
-        if (video) video.onloadeddata = () => { predictWebcam(); };
-      });
-    });
-  } catch (e) {
-    console.error("PeerJS初期化失敗:", e);
-  }
-
-  initializeAI();
-});
-
+// 初期AIロード
 async function initializeAI() {
-  if (statusEl) {
-    statusEl.innerText = "ステータス: AIモデルをロード中...";
-    statusEl.style.color = "#ffc107";
-  }
-
+  status.innerText = "ステータス: AIモデルをロード中...";
+  status.style.color = "#ffc107";
   try {
     vision = await FilesetResolver.forVisionTasks(
       "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.2/wasm"
     );
+    const selectedModel = document.getElementById("modelSelect").value;
     objectDetector = await ObjectDetector.createFromOptions(vision, {
-      baseOptions: { modelAssetPath: modelPaths["lite0"], delegate: "GPU" },
+      baseOptions: {
+        modelAssetPath: modelPaths[selectedModel],
+        delegate: "GPU"
+      },
       scoreThreshold: 0.3,
       runningMode: runningMode
     });
   } catch (err) {
-    console.warn("MediaPipeロード失敗:", err);
+    console.warn("MediaPipeのロードに失敗しました:", err);
   }
 
   try {
     mobilenetModel = await mobilenet.load();
+    status.innerText = "ステータス: PCのIDを入力して接続してください";
+    status.style.color = "#007bff";
   } catch (err) {
-    console.warn("MobileNetロード失敗:", err);
-  }
-
-  if (statusEl) {
-    statusEl.innerText = "ステータス: PCのIDを入力して接続してください";
-    statusEl.style.color = "#007bff";
+    console.error(err);
+    status.innerText = "エラー: AIのロードに失敗しました";
+    status.style.color = "#ff4444";
   }
 }
+initializeAI();
 
+// タブ切り替え
 window.switchTab = function(tabName) {
-  const buttons = document.querySelectorAll('.tab-btn');
-  const contents = document.querySelectorAll('.tab-content');
-
-  buttons.forEach(btn => btn.classList.remove('active'));
-  contents.forEach(content => content.classList.remove('active'));
-
+  document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
   if (tabName === 'search') {
-    if (buttons[0]) buttons[0].classList.add('active');
-    const searchTab = document.getElementById('searchTab');
-    if (searchTab) searchTab.classList.add('active');
+    document.querySelector('.tab-menu button:nth-child(1)').classList.add('active');
+    document.getElementById('searchTab').classList.add('active');
   } else {
-    if (buttons[1]) buttons[1].classList.add('active');
-    const regTab = document.getElementById('registerTab');
-    if (regTab) regTab.classList.add('active');
+    document.querySelector('.tab-menu button:nth-child(2)').classList.add('active');
+    document.getElementById('registerTab').classList.add('active');
   }
 };
 
+// PC接続
 window.connectToPC = function() {
-  if (!peer) { alert("PeerJSが初期化されていません。"); return; }
-  const pcIdInput = document.getElementById("pcIdInput");
-  const pcId = pcIdInput ? pcIdInput.value.trim() : "";
+  const pcId = document.getElementById("pcIdInput").value.trim();
   if (!pcId) { alert("PCのIDを入力してください！"); return; }
-
-  if (connStatusEl) {
-    connStatusEl.innerText = "ステータス: 接続中...";
-    connStatusEl.style.color = "#ffc107";
-  }
-  
-  try {
-    conn = peer.connect(pcId);
-    conn.on('open', () => {
-      if (connStatusEl) {
-        connStatusEl.innerText = "ステータス: 接続完了 ✅";
-        connStatusEl.style.color = "#28a745";
-      }
-      if (startButton) {
-        startButton.disabled = false;
-        startButton.innerText = "遠隔カメラ起動 & 探索スタート";
-        startButton.style.background = "#28a745";
-      }
-      if (statusEl) {
-        statusEl.innerText = "ステータス: 準備完了";
-        statusEl.style.color = "#00ff00";
-      }
-    });
-
-    // 📌 PC側からのYOLO検出結果を受信するリスナー
-    conn.on('data', (data) => {
-      if (data.action === 'yolo_result') {
-        pcYoloDetections = data.detections;
-      }
-    });
-  } catch (e) {
-    alert("接続エラー: " + e.message);
-  }
+  connStatus.innerText = "ステータス: 接続中...";
+  conn = peer.connect(pcId);
+  conn.on('open', () => {
+    connStatus.innerText = "ステータス: 接続完了 ✅";
+    connStatus.style.color = "#28a745";
+    startButton.disabled = false;
+    startButton.innerText = "遠隔カメラ起動 & 探索スタート";
+    status.innerText = "ステータス: 準備完了";
+    status.style.color = "#00ff00";
+  });
 };
 
-window.changeModel = async function() {
-  const modelSelectElem = document.getElementById("modelSelect");
-  if (!modelSelectElem) return;
-  const selectedModel = modelSelectElem.value;
-  currentModelType = selectedModel;
+peer.on('call', (call) => {
+  call.answer();
+  call.on('stream', (remoteStream) => {
+    video.srcObject = remoteStream;
+    webcamRunning = true;
+    startButton.style.display = "none";
+    stopButton.style.display = "block";
+    status.innerText = `ステータス: 探索中... (${currentSearchWord})`;
+    status.style.color = "#00ff00";
+    video.onloadeddata = () => { predictWebcam(); };
+  });
+});
 
+// モデル切り替え（「登録した物体の検知」に対応）
+window.changeModel = async function() {
+  const selectedModel = document.getElementById("modelSelect").value;
   if (selectedModel === "custom") {
     if (registeredEmbeddings.length === 0) {
-      alert("カスタムモデルがありません。物体登録モードから登録してください。");
-      modelSelectElem.value = "lite0";
-      currentModelType = "lite0";
+      alert("登録された物体がありません。「物体登録モード」から登録してください。");
+      document.getElementById("modelSelect").value = "lite0";
       return;
     }
     useCustomModel = true;
-    if (statusEl) statusEl.innerText = `ステータス: AIカスタムモデル(${activeCustomName})で探索中`;
-  } else if (selectedModel === "yolov8") {
-    useCustomModel = false;
-    if (statusEl) {
-      statusEl.innerText = "ステータス: YOLOv8モード選択 (PC側で処理を実行します)";
-      statusEl.style.color = "#00ff00";
-    }
+    status.innerText = `ステータス: 登録した物体の検知(${activeCustomName})で探索中`;
   } else {
     useCustomModel = false;
     if (!vision) return;
@@ -182,27 +133,21 @@ window.changeModel = async function() {
         scoreThreshold: 0.3,
         runningMode: runningMode
       });
-      if (statusEl) statusEl.innerText = `ステータス: 標準AI(${selectedModel})で探索中`;
     } catch (err) { console.error(err); }
   }
 };
 
 window.updateTarget = function() {
-  const targetInput = document.getElementById("targetObject");
-  const inputVal = targetInput ? targetInput.value.trim().toLowerCase() : "";
+  const inputVal = document.getElementById("targetObject").value.trim().toLowerCase();
   if (!inputVal) { alert("探すものを入力してください！"); return; }
   currentSearchWord = inputVal;
-  if (statusEl) {
-    statusEl.innerText = `🎯 「${currentSearchWord}」を探します`;
-    statusEl.style.color = "#00ff00";
-  }
+  status.innerText = `🎯 「${currentSearchWord}」を探します`;
+  status.style.color = "#00ff00";
 };
 
 window.selectCustomTarget = function(name) {
-  const targetInput = document.getElementById("targetObject");
-  const modelSelectElem = document.getElementById("modelSelect");
-  if (targetInput) targetInput.value = name;
-  if (modelSelectElem) modelSelectElem.value = "custom";
+  document.getElementById("targetObject").value = name;
+  document.getElementById("modelSelect").value = "custom";
   window.changeModel();
   window.updateTarget();
   window.switchTab('search');
@@ -210,48 +155,40 @@ window.selectCustomTarget = function(name) {
 
 window.startCamera = function() {
   if (!conn || !conn.open) { alert("先にPCと接続してください！"); return; }
-  const targetInput = document.getElementById("targetObject");
-  currentSearchWord = targetInput ? targetInput.value.trim().toLowerCase() : "cup";
-  
-  // 📌 選択されているモデル情報もPCに送る
-  conn.send({ 
-    action: 'start', 
-    keyword: currentSearchWord, 
-    smartphoneId: peer.id, 
-    model: currentModelType 
-  });
-  if (statusEl) statusEl.innerText = "ステータス: 遠隔カメラ起動要求を送信中...";
+  currentSearchWord = document.getElementById("targetObject").value.trim().toLowerCase();
+  conn.send({ action: 'start', keyword: currentSearchWord, smartphoneId: peer.id });
+  status.innerText = "ステータス: 遠隔カメラ起動要求を送信中...";
 };
 
 window.stopCamera = function() {
   if (conn && conn.open) conn.send({ action: 'stop' });
   webcamRunning = false;
-  if (video && video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
-  if (video) video.srcObject = null;
-  if (ctx && canvas) ctx.clearRect(0, 0, canvas.width, canvas.height);
-  if (stopButton) stopButton.style.display = "none";
-  if (startButton) startButton.style.display = "block";
-  if (statusEl) statusEl.innerText = "ステータス: 停止しました";
+  if (video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
+  video.srcObject = null;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  stopButton.style.display = "none";
+  startButton.style.display = "block";
+  status.innerText = "ステータス: 停止しました";
 };
 
-// 登録カメラ関連（変更なし）
+// ================= 物体登録ページ ＆ ガイド内撮影・比率変更処理 =================
 window.startRegCamera = async function() {
   const regVideo = document.getElementById("regVideo");
-  const regStatus = document.getElementById("regStatus");
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
-    if (regVideo) regVideo.srcObject = stream;
-    if (regStatus) regStatus.innerText = "ステータス: カメラ起動中。";
+    regVideo.srcObject = stream;
+    document.getElementById("regStatus").innerText = "ステータス: カメラ起動中。ガイド枠に合わせるか手動クロップをご利用ください";
   } catch (err) { alert("カメラ起動失敗: " + err.message); }
 };
 
 window.stopRegCamera = function() {
   const regVideo = document.getElementById("regVideo");
-  const regStatus = document.getElementById("regStatus");
   if (regVideo && regVideo.srcObject) {
-    regVideo.srcObject.getTracks().forEach(track => track.stop());
+    const stream = regVideo.srcObject;
+    stream.getTracks().forEach(track => track.stop());
     regVideo.srcObject = null;
-    if (regStatus) regStatus.innerText = "ステータス: 登録カメラ停止";
+    document.getElementById("regStatus").innerText = "ステータス: 登録カメラを停止しました";
+    document.getElementById("regStatus").style.color = "#aaa";
   }
 };
 
@@ -260,35 +197,44 @@ window.setAspectRatio = function(type) {
   const guideBox = document.getElementById("regGuideBox");
   if (!guideBox) return;
   if (type === 'square') {
-    guideBox.style.width = '160px'; guideBox.style.height = '160px';
+    guideBox.style.width = '160px';
+    guideBox.style.height = '160px';
   } else if (type === 'landscape') {
-    guideBox.style.width = '240px'; guideBox.style.height = '120px';
+    guideBox.style.width = '240px';
+    guideBox.style.height = '120px';
   } else if (type === 'portrait') {
-    guideBox.style.width = '120px'; guideBox.style.height = '240px';
+    guideBox.style.width = '120px';
+    guideBox.style.height = '240px';
   }
 };
 
 window.clearCustomModel = function() {
-  if (!confirm("登録データを消去しますか？")) return;
-  registeredEmbeddings = []; backgroundEmbeddings = [];
-  useCustomModel = false; activeCustomName = "";
-  capturedObjects = []; capturedBackgrounds = [];
+  if (!confirm("登録した物体データとモデルを消去しますか？")) return;
+  registeredEmbeddings = [];
+  backgroundEmbeddings = [];
+  useCustomModel = false;
+  activeCustomName = "";
+  capturedObjects = [];
+  capturedBackgrounds = [];
   document.getElementById("objCount").innerText = "0";
   document.getElementById("bgCount").innerText = "0";
   document.getElementById("objThumbnails").innerHTML = "";
   document.getElementById("bgThumbnails").innerHTML = "";
   document.getElementById("registeredList").innerHTML = "";
+  document.getElementById("quickSelectList").innerHTML = "";
+
   const modelSelect = document.getElementById("modelSelect");
-  if (modelSelect) {
-    const customOpt = modelSelect.querySelector('option[value="custom"]');
-    if (customOpt) customOpt.remove();
-    modelSelect.value = "lite0";
-  }
+  const customOption = modelSelect.querySelector('option[value="custom"]');
+  if (customOption) { customOption.remove(); }
+  modelSelect.value = "lite0";
+
+  document.getElementById("registerName").value = "";
+  document.getElementById("regStatus").innerText = "ステータス: すべての登録データを消去しました";
+  document.getElementById("regStatus").style.color = "#ff4444";
 };
 
 window.clearGallery = function() {
-  const gallery = document.getElementById("imageGallery");
-  if (gallery) gallery.innerHTML = "";
+  document.getElementById("imageGallery").innerHTML = "";
 };
 
 function cropGuideArea() {
@@ -296,107 +242,147 @@ function cropGuideArea() {
   const guideBox = document.getElementById("regGuideBox");
   if (!regVideo || !regVideo.srcObject || !guideBox) return null;
   const tempCanvas = document.createElement("canvas");
-  tempCanvas.width = 224; tempCanvas.height = 224;
+  tempCanvas.width = 224;
+  tempCanvas.height = 224;
   const tempCtx = tempCanvas.getContext("2d");
-  const vW = regVideo.videoWidth; const vH = regVideo.videoHeight;
-  const dW = regVideo.clientWidth; const dH = regVideo.clientHeight;
+  const vW = regVideo.videoWidth;
+  const vH = regVideo.videoHeight;
+  const dW = regVideo.clientWidth;
+  const dH = regVideo.clientHeight;
   if (vW === 0 || vH === 0) return null;
-  const sX = vW / dW; const sY = vH / dH;
+  const sX = vW / dW;
+  const sY = vH / dH;
   const gRect = guideBox.getBoundingClientRect();
   const vRect = regVideo.getBoundingClientRect();
-  tempCtx.drawImage(regVideo, (gRect.left - vRect.left) * sX, (gRect.top - vRect.top) * sY, gRect.width * sX, gRect.height * sY, 0, 0, 224, 224);
+  const cW = gRect.width * sX;
+  const cH = gRect.height * sY;
+  const cX = (gRect.left - vRect.left) * sX;
+  const cY = (gRect.top - vRect.top) * sY;
+  tempCtx.drawImage(regVideo, cX, cY, cW, cH, 0, 0, 224, 224);
   return tempCanvas;
 }
 
 window.captureObject = function() {
-  const canvasElem = cropGuideArea();
-  if (!canvasElem) { alert("先にカメラを起動してください"); return; }
-  capturedObjects.push(canvasElem);
+  const canvas = cropGuideArea();
+  if (!canvas) { alert("先にカメラを起動してください"); return; }
+  capturedObjects.push(canvas);
   document.getElementById("objCount").innerText = capturedObjects.length;
   const img = document.createElement("img");
-  img.src = canvasElem.toDataURL("image/jpeg");
+  img.src = canvas.toDataURL("image/jpeg");
   img.style.width = "40px"; img.style.height = "40px"; img.style.objectFit = "cover"; img.style.borderRadius = "4px";
   document.getElementById("objThumbnails").appendChild(img);
 };
 
 window.captureBackground = function() {
-  const canvasElem = cropGuideArea();
-  if (!canvasElem) { alert("先にカメラを起動してください"); return; }
-  capturedBackgrounds.push(canvasElem);
+  const canvas = cropGuideArea();
+  if (!canvas) { alert("先にカメラを起動してください"); return; }
+  capturedBackgrounds.push(canvas);
   document.getElementById("bgCount").innerText = capturedBackgrounds.length;
   const img = document.createElement("img");
-  img.src = canvasElem.toDataURL("image/jpeg");
+  img.src = canvas.toDataURL("image/jpeg");
   img.style.width = "40px"; img.style.height = "40px"; img.style.objectFit = "cover"; img.style.borderRadius = "4px";
   document.getElementById("bgThumbnails").appendChild(img);
 };
 
-// クロップ処理（変更なし）
+// ================= ✂️ 手動切り取り（クロップ）機能 =================
 let capturedImageBitmap = null;
 let isDrawing = false;
 let startX = 0, startY = 0, endX = 0, endY = 0;
 
 window.captureAndCropMode = function() {
     const regVideo = document.getElementById('regVideo');
-    if (!regVideo || !regVideo.videoWidth) { alert("カメラを起動してください。"); return; }
+    if (!regVideo) { alert("登録用カメラの要素が見つかりません。"); return; }
+    const width = regVideo.videoWidth;
+    const height = regVideo.videoHeight;
+    if (!width || !height) { alert("カメラの映像がまだ準備できていません。"); return; }
+
     const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = regVideo.videoWidth; tempCanvas.height = regVideo.videoHeight;
-    tempCanvas.getContext('2d').drawImage(regVideo, 0, 0);
+    tempCanvas.width = width;
+    tempCanvas.height = height;
+    const tempCtx = tempCanvas.getContext('2d');
+    tempCtx.drawImage(regVideo, 0, 0, width, height);
+
     const img = new Image();
     img.onload = function() {
         const cropCanvas = document.getElementById('cropCanvas');
         const cropSection = document.getElementById('crop-section');
-        cropCanvas.width = 320; cropCanvas.height = (img.height / img.width) * 320;
-        cropCanvas.getContext('2d').drawImage(img, 0, 0, cropCanvas.width, cropCanvas.height);
+        if (!cropCanvas || !cropSection) return;
+        const displayWidth = 320;
+        const displayHeight = (img.height / img.width) * displayWidth;
+        cropCanvas.width = displayWidth;
+        cropCanvas.height = displayHeight;
+        cropCanvas.style.width = "100%";
+        cropCanvas.style.height = "auto";
+        const ctxCrop = cropCanvas.getContext('2d');
+        ctxCrop.clearRect(0, 0, displayWidth, displayHeight);
+        ctxCrop.drawImage(img, 0, 0, displayWidth, displayHeight);
         capturedImageBitmap = img;
         cropSection.style.display = "block";
+        cropSection.scrollIntoView({ behavior: 'smooth' });
     };
     img.src = tempCanvas.toDataURL('image/jpeg');
 };
 
-const cropCanvasEl = document.getElementById('cropCanvas');
-if (cropCanvasEl) {
-    const ctxCrop = cropCanvasEl.getContext('2d');
+const cropCanvas = document.getElementById('cropCanvas');
+if (cropCanvas) {
+    const ctxCrop = cropCanvas.getContext('2d');
     function getCursorPos(e) {
-        const rect = cropCanvasEl.getBoundingClientRect();
+        const rect = cropCanvas.getBoundingClientRect();
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
         const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-        return { x: (clientX - rect.left) * (cropCanvasEl.width / rect.width), y: (clientY - rect.top) * (cropCanvasEl.height / rect.height) };
+        const scaleX = cropCanvas.width / rect.width;
+        const scaleY = cropCanvas.height / rect.height;
+        return {
+            x: (clientX - rect.left) * scaleX,
+            y: (clientY - rect.top) * scaleY
+        };
     }
-    cropCanvasEl.onmousedown = (e) => { isDrawing = true; const p = getCursorPos(e); startX = p.x; startY = p.y; };
-    cropCanvasEl.ontouchstart = (e) => { isDrawing = true; const p = getCursorPos(e); startX = p.x; startY = p.y; };
-    cropCanvasEl.onmousemove = (e) => {
+    cropCanvas.onmousedown = (e) => { isDrawing = true; const pos = getCursorPos(e); startX = pos.x; startY = pos.y; endX = startX; endY = startY; };
+    cropCanvas.ontouchstart = (e) => { isDrawing = true; const pos = getCursorPos(e); startX = pos.x; startY = pos.y; endX = startX; endY = startY; };
+    cropCanvas.onmousemove = (e) => {
         if (!isDrawing || !capturedImageBitmap) return;
-        const p = getCursorPos(e); endX = p.x; endY = p.y;
-        ctxCrop.clearRect(0, 0, cropCanvasEl.width, cropCanvasEl.height);
-        ctxCrop.drawImage(capturedImageBitmap, 0, 0, cropCanvasEl.width, cropCanvasEl.height);
+        const pos = getCursorPos(e); endX = pos.x; endY = pos.y;
+        ctxCrop.clearRect(0, 0, cropCanvas.width, cropCanvas.height);
+        ctxCrop.drawImage(capturedImageBitmap, 0, 0, cropCanvas.width, cropCanvas.height);
         ctxCrop.strokeStyle = "#ff0055"; ctxCrop.lineWidth = 4;
         ctxCrop.strokeRect(startX, startY, endX - startX, endY - startY);
     };
-    cropCanvasEl.ontouchmove = (e) => {
+    cropCanvas.ontouchmove = (e) => {
         if (!isDrawing || !capturedImageBitmap) return;
-        const p = getCursorPos(e); endX = p.x; endY = p.y;
-        ctxCrop.clearRect(0, 0, cropCanvasEl.width, cropCanvasEl.height);
-        ctxCrop.drawImage(capturedImageBitmap, 0, 0, cropCanvasEl.width, cropCanvasEl.height);
+        const pos = getCursorPos(e); endX = pos.x; endY = pos.y;
+        ctxCrop.clearRect(0, 0, cropCanvas.width, cropCanvas.height);
+        ctxCrop.drawImage(capturedImageBitmap, 0, 0, cropCanvas.width, cropCanvas.height);
         ctxCrop.strokeStyle = "#ff0055"; ctxCrop.lineWidth = 4;
         ctxCrop.strokeRect(startX, startY, endX - startX, endY - startY);
     };
-    cropCanvasEl.onmouseup = () => { isDrawing = false; };
-    cropCanvasEl.ontouchend = () => { isDrawing = false; };
+    cropCanvas.onmouseup = () => { isDrawing = false; };
+    cropCanvas.ontouchend = () => { isDrawing = false; };
 }
 
 window.confirmCrop = function() {
-    if (Math.abs(endX - startX) < 10) { alert("範囲を囲んでください"); return; }
+    if (startX === undefined || endX === undefined || Math.abs(endX - startX) < 10) {
+        alert("切り取りたい範囲をしっかり囲んでください！");
+        return;
+    }
+    const x = Math.min(startX, endX);
+    const y = Math.min(startY, endY);
+    const w = Math.abs(endX - startX);
+    const h = Math.abs(endY - startY);
     const cutCanvas = document.createElement('canvas');
     cutCanvas.width = 224; cutCanvas.height = 224;
-    const sX = capturedImageBitmap.width / cropCanvasEl.width;
-    const sY = capturedImageBitmap.height / cropCanvasEl.height;
-    cutCanvas.getContext('2d').drawImage(capturedImageBitmap, Math.min(startX, endX)*sX, Math.min(startY, endY)*sY, Math.abs(endX-startX)*sX, Math.abs(endY-startY)*sY, 0, 0, 224, 224);
+    const cutCtx = cutCanvas.getContext('2d');
+    const scaleX = capturedImageBitmap.width / cropCanvas.width;
+    const scaleY = capturedImageBitmap.height / cropCanvas.height;
+    cutCtx.drawImage(capturedImageBitmap, x * scaleX, y * scaleY, w * scaleX, h * scaleY, 0, 0, 224, 224);
     capturedObjects.push(cutCanvas);
     document.getElementById("objCount").innerText = capturedObjects.length;
-    const img = document.createElement("img");
-    img.src = cutCanvas.toDataURL("image/jpeg");
-    img.style.width = "40px"; img.style.height = "40px"; img.style.objectFit = "cover"; img.style.borderRadius = "4px";
-    document.getElementById("objThumbnails").appendChild(img);
+    const thumbContainer = document.getElementById("objThumbnails");
+    if (thumbContainer) {
+        const img = document.createElement("img");
+        img.src = cutCanvas.toDataURL("image/jpeg");
+        img.style.width = "40px"; img.style.height = "40px"; img.style.objectFit = "cover"; img.style.borderRadius = "4px";
+        thumbContainer.appendChild(img);
+    }
     document.getElementById('crop-section').style.display = "none";
 };
 
@@ -404,38 +390,82 @@ window.cancelCrop = function() {
     document.getElementById('crop-section').style.display = "none";
 };
 
+// ⚡ AI特徴量ベクトル抽出・登録処理
 window.trainAndRegister = async function() {
   const name = document.getElementById("registerName").value.trim().toLowerCase();
-  if (!name) { alert("物体名を入力してください！"); return; }
-  if (capturedObjects.length === 0) { alert("画像を撮影してください！"); return; }
-  if (!mobilenetModel) { alert("MobileNetモデルが未ロードです。"); return; }
+  if (!name) { alert("登録する物体名を入力してください！"); return; }
+  if (capturedObjects.length === 0) { alert("物体を1枚以上撮影してください！"); return; }
+  if (!mobilenetModel) { alert("MobileNetモデルがまだロードされていません。"); return; }
 
+  document.getElementById("regStatus").innerText = "⚡ AI特徴量を解析・登録中...";
+  document.getElementById("regStatus").style.color = "#ffc107";
   try {
-    registeredEmbeddings = []; backgroundEmbeddings = [];
+    registeredEmbeddings = [];
+    backgroundEmbeddings = [];
     for (let objCanvas of capturedObjects) {
       tf.tidy(() => {
-        registeredEmbeddings.push(Array.from(mobilenetModel.infer(tf.browser.fromPixels(objCanvas).toFloat().expandDims(0), true).dataSync()));
+        const tensor = tf.browser.fromPixels(objCanvas).toFloat().expandDims(0);
+        const embedding = mobilenetModel.infer(tensor, true);
+        registeredEmbeddings.push(Array.from(embedding.dataSync()));
       });
     }
     for (let bgCanvas of capturedBackgrounds) {
       tf.tidy(() => {
-        backgroundEmbeddings.push(Array.from(mobilenetModel.infer(tf.browser.fromPixels(bgCanvas).toFloat().expandDims(0), true).dataSync()));
+        const tensor = tf.browser.fromPixels(bgCanvas).toFloat().expandDims(0);
+        const embedding = mobilenetModel.infer(tensor, true);
+        backgroundEmbeddings.push(Array.from(embedding.dataSync()));
       });
     }
-
     activeCustomName = name;
     const modelSelect = document.getElementById("modelSelect");
-    if (!modelSelect.querySelector('option[value="custom"]')) {
-      modelSelect.innerHTML += `<option value="custom">AIカスタム: ${name}</option>`;
+    
+    // 選択肢の表記を「登録した物体の検知」に変更
+    if (!document.querySelector('#modelSelect option[value="custom"]')) {
+      modelSelect.innerHTML += `<option value="custom">登録した物体の検知: ${name}</option>`;
     } else {
-      modelSelect.querySelector('option[value="custom"]').innerText = `AIカスタム: ${name}`;
+      document.querySelector('#modelSelect option[value="custom"]').innerText = `登録した物体の検知: ${name}`;
     }
     modelSelect.value = "custom";
-    currentModelType = "custom";
     useCustomModel = true;
 
+    document.getElementById("regStatus").innerText = `🎉 「${name}」の登録が完了しました！`;
+    document.getElementById("regStatus").style.color = "#00ff00";
+
+    const registeredList = document.getElementById("registeredList");
+    registeredList.innerHTML = "";
+    const container = document.createElement("div");
+    container.style.textAlign = "center"; container.style.cursor = "pointer";
+    container.onclick = () => selectCustomTarget(name);
+    const thumb = document.createElement("img");
+    thumb.src = capturedObjects[0].toDataURL("image/jpeg");
+    thumb.style.width = "70px"; thumb.style.height = "70px"; thumb.style.objectFit = "cover"; thumb.style.borderRadius = "6px"; thumb.style.border = "2px solid #28a745";
+    container.appendChild(thumb);
+    const lbl = document.createElement("div");
+    lbl.innerText = name; lbl.style.fontSize = "10px"; lbl.style.color = "#fff";
+    container.appendChild(lbl);
+    registeredList.appendChild(container);
+
+    const quickBtn = document.getElementById("quickSelectList");
+    if (quickBtn) {
+      quickBtn.innerHTML = "";
+      const btn = document.createElement("button");
+      btn.innerText = `🔍 ${name}`;
+      btn.style.cssText = "padding: 4px 8px; background: #28a745; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;";
+      btn.onclick = () => selectCustomTarget(name);
+      quickBtn.appendChild(btn);
+    }
+
+    capturedObjects = [];
+    capturedBackgrounds = [];
+    document.getElementById("objCount").innerText = "0";
+    document.getElementById("bgCount").innerText = "0";
+    document.getElementById("objThumbnails").innerHTML = "";
+    document.getElementById("bgThumbnails").innerHTML = "";
     alert(`「${name}」の登録が完了しました！`);
-  } catch (err) { alert("登録エラー: " + err.message); }
+  } catch (err) {
+    console.error(err);
+    alert("登録中にエラーが発生しました: " + err.message);
+  }
 };
 
 function calculateCosineSimilarity(vecA, vecB) {
@@ -448,97 +478,137 @@ function calculateCosineSimilarity(vecA, vecB) {
   return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
-// 📌 リアルタイム推論ループ（YOLOはPC結果を描画、その他はスマホで従来通り処理）
+// ================= リアルタイム推論ループ（ハイブリッド構成：YOLO枠 × MobileNet判定） =================
 async function predictWebcam() {
   if (!webcamRunning) return;
-  if (video && video.videoWidth > 0 && video.videoHeight > 0 && canvas) {
-    if (canvas.width !== video.clientWidth || canvas.height !== video.clientHeight) {
-      canvas.width = video.clientWidth;
-      canvas.height = video.clientHeight;
+
+  if (video.videoWidth > 0 && video.videoHeight > 0) {
+    const displayWidth = video.clientWidth;
+    const displayHeight = video.clientHeight;
+    if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
+      canvas.width = displayWidth;
+      canvas.height = displayHeight;
     }
   }
 
-  if (video && video.currentTime !== lastVideoTime) {
+  if (video.currentTime !== lastVideoTime) {
     lastVideoTime = video.currentTime;
     try {
-      if (ctx && canvas) ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
       let foundTarget = false;
 
-      // 1. カスタムモデルモード（スマホ側処理）
-      if (currentModelType === "custom" && registeredEmbeddings.length > 0 && mobilenetModel) {
-        const cropCanvas = document.createElement("canvas");
-        cropCanvas.width = 224; cropCanvas.height = 224;
-        const cropCtx = cropCanvas.getContext("2d");
-        cropCtx.drawImage(video, video.videoWidth * 0.2, video.videoHeight * 0.2, video.videoWidth * 0.6, video.videoHeight * 0.6, 0, 0, 224, 224);
+      // 【「登録した物体の検知」モードの場合】YOLO（objectDetector）の枠を利用して、その中身をMobileNetで高精度判定
+      if (useCustomModel && registeredEmbeddings.length > 0 && mobilenetModel && objectDetector) {
+        const detections = objectDetector.detectForVideo(video, performance.now());
 
-        const currentEmbedding = tf.tidy(() => {
-          return Array.from(mobilenetModel.infer(tf.browser.fromPixels(cropCanvas).toFloat().expandDims(0), true).dataSync());
-        });
+        if (detections && detections.detections) {
+          const scaleX = canvas.width / video.videoWidth;
+          const scaleY = canvas.height / video.videoHeight;
 
-        let maxObjSimilarity = 0;
-        for (let regEmb of registeredEmbeddings) {
-          const sim = calculateCosineSimilarity(currentEmbedding, regEmb);
-          if (sim > maxObjSimilarity) maxObjSimilarity = sim;
-        }
+          for (let detection of detections.detections) {
+            const bbox = detection.boundingBox;
+            const x = bbox.originX;
+            const y = bbox.originY;
+            const width = bbox.width;
+            const height = bbox.height;
 
-        if (maxObjSimilarity >= 0.3) {
-          foundTarget = true;
-          const boxX = canvas.width * 0.2, boxY = canvas.height * 0.2, boxW = canvas.width * 0.6, boxH = canvas.height * 0.6;
-          ctx.strokeStyle = "#00ff00"; ctx.lineWidth = 5;
-          ctx.strokeRect(boxX, boxY, boxW, boxH);
-          ctx.fillStyle = "rgba(0, 0, 0, 0.7)"; ctx.fillRect(boxX, boxY, boxW, 35);
-          ctx.fillStyle = "#00ff00"; ctx.font = "bold 16px sans-serif";
-          ctx.fillText(`✨ ${activeCustomName} (${Math.round(maxObjSimilarity * 100)}%)`, boxX + 10, boxY + 23);
-        }
-      } 
-      // 2. YOLOv8モード（PC側から送られてきた検出結果を描画）
-      else if (currentModelType === "yolov8") {
-        if (pcYoloDetections && pcYoloDetections.length > 0) {
-          const scaleX = canvas.width / 640;
-          const scaleY = canvas.height / 640;
+            if (width < 20 || height < 20) continue;
 
-          for (let det of pcYoloDetections) {
-            foundTarget = true;
-            const x = det.x * scaleX;
-            const y = det.y * scaleY;
-            const w = det.w * scaleX;
-            const h = det.h * scaleY;
+            const cropCanvas = document.createElement("canvas");
+            cropCanvas.width = 224;
+            cropCanvas.height = 224;
+            const cropCtx = cropCanvas.getContext("2d");
+            cropCtx.drawImage(video, x, y, width, height, 0, 0, 224, 224);
 
-            ctx.strokeStyle = "#00ff00"; ctx.lineWidth = 4;
-            ctx.strokeRect(x, y, w, h);
-            ctx.fillStyle = "rgba(0, 255, 0, 0.7)"; ctx.fillRect(x, y > 25 ? y - 25 : 0, w, 25);
-            ctx.fillStyle = "#000"; ctx.font = "bold 14px sans-serif";
-            ctx.fillText(`YOLOv8 (${det.score}%)`, x + 5, y > 25 ? y - 7 : 18);
+            const currentEmbedding = tf.tidy(() => {
+              const tensor = tf.browser.fromPixels(cropCanvas).toFloat().expandDims(0);
+              const embedding = mobilenetModel.infer(tensor, true);
+              return Array.from(embedding.dataSync());
+            });
+
+            let maxObjSimilarity = 0;
+            for (let regEmb of registeredEmbeddings) {
+              const similarity = calculateCosineSimilarity(currentEmbedding, regEmb);
+              if (similarity > maxObjSimilarity) maxObjSimilarity = similarity;
+            }
+
+            let maxBgSimilarity = 0;
+            for (let bgEmb of backgroundEmbeddings) {
+              const bgSimilarity = calculateCosineSimilarity(currentEmbedding, bgEmb);
+              if (bgSimilarity > maxBgSimilarity) maxBgSimilarity = bgSimilarity;
+            }
+
+            const threshold = 0.3;
+            if (maxObjSimilarity >= threshold && maxObjSimilarity > maxBgSimilarity) {
+              foundTarget = true;
+              const drawX = x * scaleX;
+              const drawY = y * scaleY;
+              const drawW = width * scaleX;
+              const drawH = height * scaleY;
+
+              ctx.strokeStyle = "#00ff00";
+              ctx.lineWidth = 4;
+              ctx.strokeRect(drawX, drawY, drawW, drawH);
+
+              ctx.fillStyle = "rgba(0, 255, 0, 0.7)";
+              ctx.fillRect(drawX, drawY > 25 ? drawY - 25 : 0, drawW, 25);
+
+              ctx.fillStyle = "#000";
+              ctx.font = "bold 14px sans-serif";
+              ctx.fillText(`✨ ${activeCustomName} (${Math.round(maxObjSimilarity * 100)}%)`, drawX + 5, drawY > 25 ? drawY - 7 : 18);
+
+              const now = Date.now();
+              if (now - lastSaveTime > 3000) {
+                saveFoundCustomImage();
+                lastSaveTime = now;
+              }
+            }
           }
         }
-      } 
-      // 3. 標準 MediaPipe 検出モード（スマホ側処理）
-      else if (objectDetector) {
+
+      } else if (objectDetector) {
+        // 【通常モデルモードの場合】標準の80種類（カップやスマホなど）を探索
         const detections = objectDetector.detectForVideo(video, performance.now());
-        if (detections && detections.detections && canvas && ctx) {
+        if (detections && detections.detections) {
           const scaleX = canvas.width / video.videoWidth;
           const scaleY = canvas.height / video.videoHeight;
           for (let detection of detections.detections) {
             const categoryName = detection.categories[0].categoryName.toLowerCase();
             const score = Math.round(detection.categories[0].score * 100);
+            
             if (categoryName.includes(currentSearchWord)) {
               foundTarget = true;
               const bbox = detection.boundingBox;
-              const x = bbox.originX * scaleX, y = bbox.originY * scaleY;
-              const width = bbox.width * scaleX, height = bbox.height * scaleY;
-              ctx.strokeStyle = "#00ff00"; ctx.lineWidth = 4;
+              const x = bbox.originX * scaleX;
+              const y = bbox.originY * scaleY;
+              const width = bbox.width * scaleX;
+              const height = bbox.height * scaleY;
+
+              ctx.strokeStyle = "#00ff00";
+              ctx.lineWidth = 4;
               ctx.strokeRect(x, y, width, height);
-              ctx.fillStyle = "rgba(0, 255, 0, 0.7)"; ctx.fillRect(x, y > 25 ? y - 25 : 0, width, 25);
-              ctx.fillStyle = "#000"; ctx.font = "bold 14px sans-serif";
+              ctx.fillStyle = "rgba(0, 255, 0, 0.7)";
+              ctx.fillRect(x, y > 25 ? y - 25 : 0, width, 25);
+              ctx.fillStyle = "#000";
+              ctx.font = "bold 14px sans-serif";
               ctx.fillText(`${categoryName} ${score}%`, x + 5, y > 25 ? y - 7 : 18);
+
+              const now = Date.now();
+              if (now - lastSaveTime > 3000) {
+                saveFoundImage(bbox);
+                lastSaveTime = now;
+              }
             }
           }
         }
       }
 
-      if (statusEl) {
-        statusEl.innerText = foundTarget ? "🎉 発見しました！" : "🔍 探索中...";
-        statusEl.style.color = foundTarget ? "#00ff00" : "#aaa";
+      if (foundTarget) {
+        status.innerText = `🎉 登録した物体を発見しました！`;
+        status.style.color = "#00ff00";
+      } else {
+        status.innerText = `🔍 探索中... (${useCustomModel ? activeCustomName : currentSearchWord})`;
+        status.style.color = "#aaa";
       }
     } catch (e) { console.error(e); }
   }
@@ -546,4 +616,28 @@ async function predictWebcam() {
   if (webcamRunning) {
     window.requestAnimationFrame(predictWebcam);
   }
+}
+
+function saveFoundImage(bbox) {
+  const gallery = document.getElementById("imageGallery");
+  if (!gallery) return;
+  const tempCanvas = document.createElement("canvas");
+  tempCanvas.width = bbox.width; tempCanvas.height = bbox.height;
+  tempCanvas.getContext("2d").drawImage(video, bbox.originX, bbox.originY, bbox.width, bbox.height, 0, 0, bbox.width, bbox.height);
+  const img = document.createElement("img");
+  img.src = tempCanvas.toDataURL("image/jpeg");
+  img.style.width = "80px"; img.style.height = "80px"; img.style.objectFit = "cover"; img.style.borderRadius = "8px"; img.style.border = "2px solid #00ff00";
+  gallery.prepend(img);
+}
+
+function saveFoundCustomImage() {
+  const gallery = document.getElementById("imageGallery");
+  if (!gallery) return;
+  const tempCanvas = document.createElement("canvas");
+  tempCanvas.width = video.videoWidth; tempCanvas.height = video.videoHeight;
+  tempCanvas.getContext("2d").drawImage(video, 0, 0);
+  const img = document.createElement("img");
+  img.src = tempCanvas.toDataURL("image/jpeg");
+  img.style.width = "80px"; img.style.height = "80px"; img.style.objectFit = "cover"; img.style.borderRadius = "8px"; img.style.border = "2px solid #00ff00";
+  gallery.prepend(img);
 }
