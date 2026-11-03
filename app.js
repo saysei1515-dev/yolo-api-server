@@ -517,14 +517,13 @@ function updateBackgroundThumbnailsUI() {
   });
 }
 
-// ✏️ 編集モードに入る関数（✨ 修正：過去の物体写真・背景写真の両方を復元して表示＆×で削除可能にする）
+// ✏️ 編集モードに入る関数（✨ 修正：過去の物体写真・背景写真の両方を復元して下部に並べ、×で消去・編集できる状態にする）
 window.startEditingObject = function(index) {
   editingObjectIndex = index;
   const obj = customObjects[index];
-  originalEditingName = obj.name;
   document.getElementById("registerName").value = obj.name;
 
-  // 🔄 過去の「物体写真」をサムネイル＆データ用配列に復元
+  // 1. 過去に保存された「物体写真」を復元してサムネイルに表示
   capturedObjects = [];
   if (obj.thumbnail) {
     const tempImg = new Image();
@@ -539,7 +538,7 @@ window.startEditingObject = function(index) {
     tempImg.src = obj.thumbnail;
   }
 
-  // 🔄 過去の「背景写真」データ（サムネイルURL等があれば）を復元
+  // 2. 過去に保存された「背景写真」を復元してサムネイルに表示
   capturedBackgrounds = [];
   if (obj.backgroundThumbnails && Array.isArray(obj.backgroundThumbnails)) {
     obj.backgroundThumbnails.forEach(bgUrl => {
@@ -559,7 +558,7 @@ window.startEditingObject = function(index) {
     document.getElementById("bgThumbnails").innerHTML = "";
   }
 
-  document.getElementById("regStatus").innerText = `✏️ 「${obj.name}」の編集モード中。写真の削除・追加、名前の変更が可能です。`;
+  document.getElementById("regStatus").innerText = `✏️ 「${obj.name}」の編集モードです。写真の削除・追加や名前の変更が可能です。`;
   document.getElementById("regStatus").style.color = "#ffc107";
 
   updateRegisteredListUI();
@@ -787,12 +786,13 @@ window.cancelCrop = function() {
     document.getElementById('crop-section').style.display = "none";
 };
 
-// ⚡ 【精度向上・自動回転(データ拡張)】AI特徴量ベクトル抽出・登録 / 追加処理
+// ⚡ 【精度向上・自動回転(データ拡張)】AI特徴量ベクトル抽出・登録 / 更新処理
 window.trainAndRegister = async function() {
   const name = document.getElementById("registerName").value.trim().toLowerCase();
   if (!name) { alert("登録する物体名を入力してください！"); return; }
   
-  if (editingObjectIndex === null && capturedObjects.length === 0) { 
+  // ✨ 修正：新規登録時だけでなく編集モード時も、写真をすべて消して0枚になった場合はエラーにする
+  if (capturedObjects.length === 0) { 
     alert("物体を1枚以上撮影してください！"); 
     return; 
   }
@@ -841,22 +841,13 @@ window.trainAndRegister = async function() {
     if (editingObjectIndex !== null) {
       const targetObj = customObjects[editingObjectIndex];
       targetObj.name = name;
-      
-      // 写真が新しく追加された場合は特徴量と背景サムネイルを結合・更新
-      if (objEmbeddings.length > 0) {
-        targetObj.embeddings.push(...objEmbeddings);
-      }
-      if (bgEmbeddings.length > 0) {
-        targetObj.backgrounds.push(...bgEmbeddings);
-        if (!targetObj.backgroundThumbnails) targetObj.backgroundThumbnails = [];
-        targetObj.backgroundThumbnails.push(...bgThumbnailsList);
-      }
-      if (capturedObjects.length > 0 && capturedObjects[capturedObjects.length - 1].dataUrl) {
-        targetObj.thumbnail = capturedObjects[capturedObjects.length - 1].dataUrl;
-      }
+      targetObj.embeddings = objEmbeddings;
+      targetObj.backgrounds = bgEmbeddings;
+      targetObj.backgroundThumbnails = bgThumbnailsList;
+      targetObj.thumbnail = capturedObjects[0].dataUrl;
 
-      document.getElementById("regStatus").innerText = `🎉 「${name}」の情報を更新しました！`;
-      alert(`「${name}」の情報を更新しました！`);
+      document.getElementById("regStatus").innerText = `🎉 「${name}」のデータを更新しました！`;
+      alert(`「${name}」のデータを更新しました！`);
       editingObjectIndex = null;
     } else {
       const newObjectData = {
@@ -1047,7 +1038,7 @@ async function predictWebcam() {
       }
 
       if (foundTarget) {
-        status.innerText = `🎉 발견しました！`;
+        status.innerText = `🎉 発見しました！`;
         status.style.color = "#00ff00";
       } else {
         status.innerText = `🔍 探索中... (${useCustomModel ? activeCustomName : currentSearchWord})`;
