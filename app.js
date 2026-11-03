@@ -6,9 +6,10 @@ let webcamRunning = false;
 let vision = undefined;
 let mobilenetModel = undefined;
 
-let customObjects = []; 
+// 💾 localStorageから保存されたカスタム物体データを復元（なければ空の配列）
+let customObjects = JSON.parse(localStorage.getItem("customObjects") || "[]"); 
 let useCustomModel = false;
-let activeCustomName = "";
+let activeCustomName = customObjects.length > 0 ? customObjects[0].name : "";
 let currentAspect = 'square'; // ガイド枠の比率
 
 // 編集モード管理用
@@ -40,10 +41,29 @@ const modelPaths = {
   lite2: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite2/float16/1/efficientdet_lite2.tflite"
 };
 
+// 💾 カスタム物体データをブラウザ（localStorage）に保存する関数
+function saveCustomObjectsToStorage() {
+  try {
+    localStorage.setItem("customObjects", JSON.stringify(customObjects));
+  } catch (e) {
+    console.error("データの保存に失敗しました（容量制限などの可能性があります）:", e);
+  }
+}
+
 // 初期AIロード
 async function initializeAI() {
   status.innerText = "ステータス: AIモデルをロード中...";
   status.style.color = "#ffc107";
+
+  // 保存されているカスタム物体があればUIと選択肢を自動復元
+  if (customObjects.length > 0) {
+    const modelSelect = document.getElementById("modelSelect");
+    if (modelSelect && !modelSelect.querySelector('option[value="custom"]')) {
+      modelSelect.innerHTML += `<option value="custom">登録した物体の検知</option>`;
+    }
+    updateRegisteredListUI();
+  }
+
   try {
     vision = await FilesetResolver.forVisionTasks(
       "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.2/wasm"
@@ -51,7 +71,7 @@ async function initializeAI() {
     const selectedModel = document.getElementById("modelSelect").value;
     objectDetector = await ObjectDetector.createFromOptions(vision, {
       baseOptions: {
-        modelAssetPath: modelPaths[selectedModel],
+        modelAssetPath: modelPaths[selectedModel] || modelPaths.lite0,
         delegate: "GPU"
       },
       scoreThreshold: 0.3,
@@ -171,7 +191,7 @@ const cocoItems = [
   { en: "hair drier", jp: "ドライヤー" }, { en: "toothbrush", jp: "ハブラシ" }
 ];
 
-// 🔽 入力に応じてカスタムサジェストを表示する関数
+// 入力に応じてカスタムサジェストを表示する関数
 window.filterSuggestions = function() {
   const input = document.getElementById("targetObject");
   const query = input.value.trim().toLowerCase();
@@ -197,7 +217,7 @@ window.filterSuggestions = function() {
     div.style.cssText = "padding: 8px 10px; font-size: 13px; color: #fff; cursor: pointer; border-bottom: 1px solid #333; text-align: left;";
     div.innerHTML = `${item.jp} <span style="color: #aaa; font-size: 11px;">(${item.en})</span>`;
     div.onmousedown = (e) => {
-      e.preventDefault(); // フォーカスが外れるのを防ぐ
+      e.preventDefault(); 
       input.value = item.en;
       box.style.display = "none";
       window.updateTarget();
@@ -208,9 +228,11 @@ window.filterSuggestions = function() {
   box.style.display = "block";
 };
 
-// 🌐 日本語→英語変換対応のターゲット更新関数
+// 日本語→英語変換対応のターゲット更新関数
 window.updateTarget = function() {
-  document.getElementById("customSuggestions").style.display = "none";
+  const customSuggestions = document.getElementById("customSuggestions");
+  if (customSuggestions) customSuggestions.style.display = "none";
+
   let inputVal = document.getElementById("targetObject").value.trim().toLowerCase();
   if (!inputVal) { alert("探すものを入力してください！"); return; }
 
@@ -223,7 +245,7 @@ window.updateTarget = function() {
     "飛行機": "airplane", "ヒコウキ": "airplane",
     "バス": "bus",
     "電車": "train", "列車": "train", "デンシャ": "train",
-    "トラック": "トラック",
+    "トラック": "truck",
     "ボート": "boat", "船": "boat",
     "信号機": "traffic light", "信号": "traffic light", "シンゴウ": "traffic light",
     "消火栓": "fire hydrant", "ショウカセン": "fire hydrant",
@@ -301,7 +323,7 @@ window.updateTarget = function() {
   // 入力が日本語辞書にあれば英語に自動変換
   if (jpToEnMap[inputVal]) {
     inputVal = jpToEnMap[inputVal];
-    document.getElementById("targetObject").value = inputVal; // 入力欄も綺麗な英語に更新
+    document.getElementById("targetObject").value = inputVal;
   }
 
   currentSearchWord = inputVal;
@@ -372,10 +394,12 @@ window.setAspectRatio = function(type) {
   }
 };
 
-// 既存の全体リセット機能
+// 全体リセット機能（ストレージも消去）
 window.clearCustomModel = function() {
   if (!confirm("登録したすべての物体データとモデルを消去しますか？")) return;
   customObjects = [];
+  localStorage.removeItem("customObjects"); // 🗑️ ストレージから消去
+
   useCustomModel = false;
   activeCustomName = "";
   editingObjectIndex = null;
@@ -386,7 +410,9 @@ window.clearCustomModel = function() {
   document.getElementById("objThumbnails").innerHTML = "";
   document.getElementById("bgThumbnails").innerHTML = "";
   document.getElementById("registeredList").innerHTML = "";
-  document.getElementById("quickSelectList").innerHTML = "";
+
+  const quickSelectList = document.getElementById("quickSelectList");
+  if (quickSelectList) quickSelectList.innerHTML = "";
 
   const modelSelect = document.getElementById("modelSelect");
   const customOption = modelSelect.querySelector('option[value="custom"]');
@@ -402,6 +428,7 @@ window.clearCustomModel = function() {
 window.removeCustomObject = function(index) {
   const removedObj = customObjects[index];
   customObjects.splice(index, 1);
+  saveCustomObjectsToStorage(); // 💾 ストレージ更新
 
   if (editingObjectIndex === index) {
     editingObjectIndex = null;
@@ -418,7 +445,8 @@ window.removeCustomObject = function(index) {
     document.getElementById("modelSelect").value = "lite0";
     const customOption = document.getElementById("modelSelect").querySelector('option[value="custom"]');
     if (customOption) customOption.remove();
-    document.getElementById("quickSelectList").innerHTML = "";
+    const quickSelectList = document.getElementById("quickSelectList");
+    if (quickSelectList) quickSelectList.innerHTML = "";
   } else {
     activeCustomName = customObjects[0].name;
   }
@@ -428,28 +456,28 @@ window.removeCustomObject = function(index) {
   document.getElementById("regStatus").style.color = "#ffc107";
 };
 
-// 撮影中の「背景写真」の個別削除（×ボタン）
+// 撮影中の「背景写真」の個別削除
 window.removeBackgroundPhoto = function(index) {
   capturedBackgrounds.splice(index, 1);
   document.getElementById("bgCount").innerText = capturedBackgrounds.length;
   updateBackgroundThumbnailsUI();
 };
 
-// 撮影中の「物体写真」の個別削除（×ボタン）
+// 撮影中の「物体写真」の個別削除
 window.removeObjectPhoto = function(index) {
   capturedObjects.splice(index, 1);
   document.getElementById("objCount").innerText = capturedObjects.length;
   updateObjectThumbnailsUI();
 };
 
-// 物体サムネイルのUI再描画（×ボタン付き）
+// 物体サムネイルのUI再描画
 function updateObjectThumbnailsUI() {
   const thumbContainer = document.getElementById("objThumbnails");
   thumbContainer.innerHTML = "";
   capturedObjects.forEach((item, idx) => {
     const wrap = document.createElement("div");
     wrap.style.cssText = "position: relative; display: inline-block;";
-    
+
     const img = document.createElement("img");
     img.src = item.dataUrl;
     img.style.cssText = "width: 40px; height: 40px; object-fit: cover; border-radius: 4px; display: block;";
@@ -465,14 +493,14 @@ function updateObjectThumbnailsUI() {
   });
 }
 
-// 背景サムネイルのUI再描画（×ボタン付き）
+// 背景サムネイルのUI再描画
 function updateBackgroundThumbnailsUI() {
   const bgContainer = document.getElementById("bgThumbnails");
   bgContainer.innerHTML = "";
   capturedBackgrounds.forEach((item, idx) => {
     const wrap = document.createElement("div");
     wrap.style.cssText = "position: relative; display: inline-block;";
-    
+
     const img = document.createElement("img");
     img.src = item.dataUrl;
     img.style.cssText = "width: 40px; height: 40px; object-fit: cover; border-radius: 4px; display: block;";
@@ -494,7 +522,7 @@ window.startEditingObject = function(index) {
   const obj = customObjects[index];
   originalEditingName = obj.name;
   document.getElementById("registerName").value = obj.name;
-  
+
   capturedObjects = [];
   capturedBackgrounds = [];
   document.getElementById("objCount").innerText = "0";
@@ -504,12 +532,12 @@ window.startEditingObject = function(index) {
 
   document.getElementById("regStatus").innerText = `✏️ 「${obj.name}」の編集モード中。追加する写真/背景を撮影して学習ボタンを押してください。`;
   document.getElementById("regStatus").style.color = "#ffc107";
-  
+
   updateRegisteredListUI();
   document.getElementById("registerName").scrollIntoView({ behavior: 'smooth' });
 };
 
-// 編集モードを終了する関数（データを追加せずにキャンセル）
+// 編集モードを終了する関数
 window.cancelEditingObject = function() {
   if (editingObjectIndex !== null) {
     const objName = customObjects[editingObjectIndex].name;
@@ -521,22 +549,23 @@ window.cancelEditingObject = function() {
     document.getElementById("objThumbnails").innerHTML = "";
     document.getElementById("bgThumbnails").innerHTML = "";
     document.getElementById("registerName").value = "";
-    
+
     document.getElementById("regStatus").innerText = `ステータス: 「${objName}」の編集をキャンセルしました（データは追加されません）`;
     document.getElementById("regStatus").style.color = "#aaa";
     updateRegisteredListUI();
   }
 };
 
-// 登録リストのUI更新と、下に「編集モード」「終了」ボタンを配置
+// 登録リストのUI更新
 function updateRegisteredListUI() {
   const registeredList = document.getElementById("registeredList");
+  if (!registeredList) return;
   registeredList.innerHTML = "";
 
   customObjects.forEach((obj, idx) => {
     const container = document.createElement("div");
     container.style.cssText = "position: relative; display: inline-block; text-align: center; margin-right: 12px; background: #222; padding: 8px; border-radius: 8px; vertical-align: top;";
-    
+
     const isEditing = (editingObjectIndex === idx);
 
     const thumb = document.createElement("img");
@@ -777,7 +806,7 @@ window.trainAndRegister = async function() {
       targetObj.name = name;
       targetObj.embeddings.push(...objEmbeddings);
       targetObj.backgrounds.push(...bgEmbeddings);
-      
+
       if (capturedObjects.length > 0) {
         targetObj.thumbnail = capturedObjects[0].dataUrl;
       }
@@ -796,6 +825,8 @@ window.trainAndRegister = async function() {
       document.getElementById("regStatus").innerText = `🎉 「${name}」の登録が完了しました！`;
       alert(`「${name}」の登録が完了しました！`);
     }
+
+    saveCustomObjectsToStorage(); // 💾 ストレージに永続保存
 
     activeCustomName = name;
     const modelSelect = document.getElementById("modelSelect");
@@ -943,7 +974,7 @@ async function predictWebcam() {
           for (let detection of detections.detections) {
             const categoryName = detection.categories[0].categoryName.toLowerCase();
             const score = Math.round(detection.categories[0].score * 100);
-            
+
             if (categoryName.includes(currentSearchWord)) {
               foundTarget = true;
               const bbox = detection.boundingBox;
@@ -994,7 +1025,7 @@ function addGalleryThumbnail(dataUrl) {
   const img = document.createElement("img");
   img.src = dataUrl;
   img.style.cssText = "width: 80px; height: 80px; object-fit: cover; border-radius: 8px; border: 2px solid #00ff00; cursor: pointer; flex-shrink: 0;";
-  
+
   img.onclick = () => {
     const modal = document.getElementById("imagePreviewModal");
     const previewImg = document.getElementById("previewImage");
