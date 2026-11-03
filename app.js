@@ -190,21 +190,18 @@ const cocoItems = [
   { en: "hair drier", jp: "ドライヤー" }, { en: "toothbrush", jp: "ハブラシ" }
 ];
 
-// 🔽 サジェスト表示関数（カスタムモード時は自分が登録した物体名のみをプルダウンに表示）
 window.filterSuggestions = function() {
   const input = document.getElementById("targetObject");
   const query = input.value.trim().toLowerCase();
   const box = document.getElementById("customSuggestions");
   const selectedModel = document.getElementById("modelSelect").value;
 
-  // ✨ 修正：カスタムモデルが選ばれている場合は、登録済みカスタム物体の名前のみを対象にする
   if (selectedModel === "custom") {
     if (customObjects.length === 0) {
       box.style.display = "none";
       return;
     }
 
-    // 入力文字に部分一致する登録物体名を抽出（未入力の場合は全件表示）
     const matchedNames = customObjects
       .map(obj => obj.name)
       .filter(name => name.toLowerCase().includes(query));
@@ -232,7 +229,6 @@ window.filterSuggestions = function() {
     return;
   }
 
-  // 標準モデル（lite0/lite2）の場合は通常のCOCOデータセットサジェストを表示
   if (!query) {
     box.style.display = "none";
     return;
@@ -355,7 +351,6 @@ window.updateTarget = function() {
   };
 
   const selectedModel = document.getElementById("modelSelect").value;
-  // カスタムモデル選択時は辞書変換をバイパスして、ユーザーが登録したそのままの名前を優先
   if (selectedModel !== "custom" && jpToEnMap[inputVal]) {
     inputVal = jpToEnMap[inputVal];
     document.getElementById("targetObject").value = inputVal;
@@ -374,9 +369,18 @@ window.selectCustomTarget = function(name) {
   window.switchTab('search');
 };
 
+// 🔽 修正：入力欄が空のときにカメラを起動できないようにバリデーションを追加
 window.startCamera = function() {
+  const inputVal = document.getElementById("targetObject").value.trim();
+  if (!inputVal) {
+    alert("探すものを入力してください！");
+    document.getElementById("targetObject").focus();
+    return;
+  }
+
   if (!conn || !conn.open) { alert("先にPCと接続してください！"); return; }
-  currentSearchWord = document.getElementById("targetObject").value.trim().toLowerCase();
+  
+  currentSearchWord = inputVal.toLowerCase();
   conn.send({ action: 'start', keyword: currentSearchWord, smartphoneId: peer.id });
   status.innerText = "ステータス: 遠隔カメラ起動要求を送信中...";
 };
