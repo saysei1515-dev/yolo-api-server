@@ -5,8 +5,7 @@ let runningMode = "VIDEO";
 let webcamRunning = false;
 let vision = undefined;
 let mobilenetModel = undefined;
-let yoloSession = undefined; // YOLO用セッション
-let currentModelType = "lite0"; // 現在選択されているモデル
+let currentModelType = "lite0";
 
 let registeredEmbeddings = []; 
 let backgroundEmbeddings = []; 
@@ -21,6 +20,7 @@ let lastSaveTime = 0;
 
 let peer = null;
 let conn = null;
+let pcYoloDetections = []; // PCから送られてきたYOLO結果格納用
 
 let capturedObjects = [];
 let capturedBackgrounds = [];
@@ -94,7 +94,6 @@ async function initializeAI() {
   }
 }
 
-// タブ切り替え
 window.switchTab = function(tabName) {
   const buttons = document.querySelectorAll('.tab-btn');
   const contents = document.querySelectorAll('.tab-content');
@@ -141,12 +140,18 @@ window.connectToPC = function() {
         statusEl.style.color = "#00ff00";
       }
     });
+
+    // 📌 PC側からのYOLO検出結果を受信するリスナー
+    conn.on('data', (data) => {
+      if (data.action === 'yolo_result') {
+        pcYoloDetections = data.detections;
+      }
+    });
   } catch (e) {
     alert("接続エラー: " + e.message);
   }
 };
 
-// 📌 モデル切り替え（MediaPipe各Lite、カスタム、YOLOv8の切り替え対応）
 window.changeModel = async function() {
   const modelSelectElem = document.getElementById("modelSelect");
   if (!modelSelectElem) return;
@@ -165,23 +170,8 @@ window.changeModel = async function() {
   } else if (selectedModel === "yolov8") {
     useCustomModel = false;
     if (statusEl) {
-      statusEl.innerText = "ステータス: YOLOv8モデルをロード中...";
-      statusEl.style.color = "#ffc107";
-    }
-    try {
-      // ※ 公開されているYOLOv8nのONNXモデルのURLを指定 (CORS許可されているもの)
-      if (!yoloSession) {
-        yoloSession = await ort.InferenceSession.create("https://huggingface.co/bofeng/yolov8n_onnx/resolve/main/yolov8n.onnx", { executionProviders: ['webgl', 'wasm'] });
-      }
-      if (statusEl) {
-        statusEl.innerText = "ステータス: YOLOv8で探索中...";
-        statusEl.style.color = "#00ff00";
-      }
-    } catch (err) {
-      console.warn("YOLOv8ロード失敗 (フォールバックします):", err);
-      alert("YOLOv8モデルのロードに失敗しました。ネットワーク接続やCORS設定をご確認ください。");
-      modelSelectElem.value = "lite0";
-      currentModelType = "lite0";
+      statusEl.innerText = "ステータス: YOLOv8モード選択 (PC側で処理を実行します)";
+      statusEl.style.color = "#00ff00";
     }
   } else {
     useCustomModel = false;
@@ -222,7 +212,14 @@ window.startCamera = function() {
   if (!conn || !conn.open) { alert("先にPCと接続してください！"); return; }
   const targetInput = document.getElementById("targetObject");
   currentSearchWord = targetInput ? targetInput.value.trim().toLowerCase() : "cup";
-  conn.send({ action: 'start', keyword: currentSearchWord, smartphoneId: peer.id });
+  
+  // 📌 選択されているモデル情報もPCに送る
+  conn.send({ 
+    action: 'start', 
+    keyword: currentSearchWord, 
+    smartphoneId: peer.id, 
+    model: currentModelType 
+  });
   if (statusEl) statusEl.innerText = "ステータス: 遠隔カメラ起動要求を送信中...";
 };
 
@@ -237,7 +234,7 @@ window.stopCamera = function() {
   if (statusEl) statusEl.innerText = "ステータス: 停止しました";
 };
 
-// 登録カメラ関連
+// 登録カメラ関連（変更なし）
 window.startRegCamera = async function() {
   const regVideo = document.getElementById("regVideo");
   const regStatus = document.getElementById("regStatus");
@@ -333,7 +330,7 @@ window.captureBackground = function() {
   document.getElementById("bgThumbnails").appendChild(img);
 };
 
-// クロップ処理
+// クロップ処理（変更なし）
 let capturedImageBitmap = null;
 let isDrawing = false;
 let startX = 0, startY = 0, endX = 0, endY = 0;
@@ -451,7 +448,7 @@ function calculateCosineSimilarity(vecA, vecB) {
   return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
-// 📌 リアルタイム推論ループ（YOLOv8対応版）
+// 📌 リアルタイム推論ループ（YOLOはPC結果を描画、その他はスマホで従来通り処理）
 async function predictWebcam() {
   if (!webcamRunning) return;
   if (video && video.videoWidth > 0 && video.videoHeight > 0 && canvas) {
@@ -467,7 +464,7 @@ async function predictWebcam() {
       if (ctx && canvas) ctx.clearRect(0, 0, canvas.width, canvas.height);
       let foundTarget = false;
 
-      // 1. カスタムモデルモードの場合
+      // 1. カスタムモデルモード（スマホ側処理）
       if (currentModelType === "custom" && registeredEmbeddings.length > 0 && mobilenetModel) {
         const cropCanvas = document.createElement("canvas");
         cropCanvas.width = 224; cropCanvas.height = 224;
@@ -494,50 +491,28 @@ async function predictWebcam() {
           ctx.fillText(`✨ ${activeCustomName} (${Math.round(maxObjSimilarity * 100)}%)`, boxX + 10, boxY + 23);
         }
       } 
-      // 2. YOLOv8モードの場合
-      else if (currentModelType === "yolov8" && yoloSession) {
-        // YOLOv8用の640x640キャンバス準備
-        const yoloCanvas = document.createElement("canvas");
-        yoloCanvas.width = 640; yoloCanvas.height = 640;
-        const yCtx = yoloCanvas.getContext("2d");
-        yCtx.drawImage(video, 0, 0, 640, 640);
-        const imgData = yCtx.getImageData(0, 0, 640, 640).data;
+      // 2. YOLOv8モード（PC側から送られてきた検出結果を描画）
+      else if (currentModelType === "yolov8") {
+        if (pcYoloDetections && pcYoloDetections.length > 0) {
+          const scaleX = canvas.width / 640;
+          const scaleY = canvas.height / 640;
 
-        // RGBAからFloat32Array（1x3x640x640のテンソル）に変換
-        const input = new Float32Array(1 * 3 * 640 * 640);
-        for (let i = 0; i < 640 * 640; i++) {
-          input[i] = imgData[i * 4] / 255.0;         // R
-          input[640 * 640 + i] = imgData[i * 4 + 1] / 255.0; // G
-          input[2 * 640 * 640 + i] = imgData[i * 4 + 2] / 255.0; // B
-        }
-
-        const tensor = new ort.Tensor('float32', input, [1, 3, 640, 640]);
-        const results = await yoloSession.run({ images: tensor });
-        const output = results[Object.keys(results)[0]].data;
-
-        const scaleX = canvas.width / 640;
-        const scaleY = canvas.height / 640;
-
-        // 簡易バウンディングボックス描画ループ（COCOデータセットの簡易判定例）
-        // ※ YOLOv8の出力テンソル構造に基づく処理
-        for (let i = 0; i < 8400; i++) {
-          const confidence = output[4 * 8400 + i]; // 信頼度スコアの例
-          if (confidence > 0.4) {
+          for (let det of pcYoloDetections) {
             foundTarget = true;
-            const x = (output[0 * 8400 + i] - output[2 * 8400 + i] / 2) * scaleX;
-            const y = (output[1 * 8400 + i] - output[3 * 8400 + i] / 2) * scaleY;
-            const w = output[2 * 8400 + i] * scaleX;
-            const h = output[3 * 8400 + i] * scaleY;
+            const x = det.x * scaleX;
+            const y = det.y * scaleY;
+            const w = det.w * scaleX;
+            const h = det.h * scaleY;
 
             ctx.strokeStyle = "#00ff00"; ctx.lineWidth = 4;
             ctx.strokeRect(x, y, w, h);
             ctx.fillStyle = "rgba(0, 255, 0, 0.7)"; ctx.fillRect(x, y > 25 ? y - 25 : 0, w, 25);
             ctx.fillStyle = "#000"; ctx.font = "bold 14px sans-serif";
-            ctx.fillText(`YOLO Object (${Math.round(confidence * 100)}%)`, x + 5, y > 25 ? y - 7 : 18);
+            ctx.fillText(`YOLOv8 (${det.score}%)`, x + 5, y > 25 ? y - 7 : 18);
           }
         }
       } 
-      // 3. 標準 MediaPipe 検出モードの場合
+      // 3. 標準 MediaPipe 検出モード（スマホ側処理）
       else if (objectDetector) {
         const detections = objectDetector.detectForVideo(video, performance.now());
         if (detections && detections.detections && canvas && ctx) {
