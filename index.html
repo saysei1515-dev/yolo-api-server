@@ -15,13 +15,11 @@
 <body>
   <div class="app-container">
     <h1>🔍 AI探偵カメラ (カスタム学習)</h1>
-
     <!-- 🔗 モード切り替えタブ -->
     <div class="tab-menu">
       <button class="tab-btn active" onclick="switchTab('search')">🔍 探索モード</button>
       <button class="tab-btn" onclick="switchTab('register')">📦 物体登録モード</button>
     </div>
-
     <!-- ================= 探索モード画面 ================= -->
     <div id="searchTab" class="tab-content active">
       <div class="control-group" style="border: 2px solid #007bff; background: #f0f7ff;">
@@ -30,7 +28,6 @@
           <input type="text" id="pcIdInput" placeholder="PC側のIDを入力 or QRスキャン" style="flex: 1;">
           <button onclick="connectToPC()" style="padding: 0 15px; background: #007bff; color: #fff; border: none; font-weight: bold; border-radius: 4px; cursor: pointer;">接続</button>
         </div>
-        
         <!-- 📷 QRコードスキャンボタン & 停止ボタン -->
         <div style="display: flex; gap: 5px; margin-bottom: 5px;">
           <button onclick="startQrScanner()" style="flex: 1; padding: 8px; background: #28a745; color: #fff; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 13px;">📷 QRスキャン起動</button>
@@ -39,16 +36,97 @@
         <div id="qr-reader" style="width: 100%; max-width: 260px; margin: 10px auto; display: none;"></div>
         <div id="connectionStatus" style="font-size: 12px; color: #666; margin-top: 5px;">ステータス: 未接続</div>
       </div>
-
       <div class="control-group">
-        <label for="targetObject">探すもの:</label>
+        <label for="targetObject">探すもの (日本語/英語対応):</label>
         <div style="display: flex; gap: 5px;">
-          <input type="text" id="targetObject" value="cup" placeholder="例: cup" style="flex: 1;">
+          <input type="text" id="targetObject" value="cup" placeholder="例: コップ または cup" list="coco-suggestions" style="flex: 1;">
           <button onclick="updateTarget()" style="padding: 0 15px; background: #007bff; color: #fff; border: none; font-weight: bold; border-radius: 4px; cursor: pointer;">決定</button>
         </div>
+        <!-- 予測入力（サジェスト）用の候補リスト（日本語対応） -->
+        <datalist id="coco-suggestions">
+          <option value="person">人 (person)</option>
+          <option value="bicycle">自転車 (bicycle)</option>
+          <option value="car">車 (car)</option>
+          <option value="motorcycle">オートバイ (motorcycle)</option>
+          <option value="airplane">飛行機 (airplane)</option>
+          <option value="bus">バス (bus)</option>
+          <option value="train">電車 (train)</option>
+          <option value="truck">トラック (truck)</option>
+          <option value="boat">ボート (boat)</option>
+          <option value="traffic light">信号機 (traffic light)</option>
+          <option value="fire hydrant">消火栓 (fire hydrant)</option>
+          <option value="stop sign">一時停止標識 (stop sign)</option>
+          <option value="parking meter">パーキングメーター (parking meter)</option>
+          <option value="bench">ベンチ (bench)</option>
+          <option value="bird">鳥 (bird)</option>
+          <option value="cat">猫 (cat)</option>
+          <option value="dog">犬 (dog)</option>
+          <option value="horse">馬 (horse)</option>
+          <option value="sheep">羊 (sheep)</option>
+          <option value="cow">牛 (cow)</option>
+          <option value="elephant">象 (elephant)</option>
+          <option value="bear">熊 (bear)</option>
+          <option value="zebra">シマウマ (zebra)</option>
+          <option value="giraffe">キリン (giraffe)</option>
+          <option value="backpack">リュック (backpack)</option>
+          <option value="umbrella">傘 (umbrella)</option>
+          <option value="handbag">ハンドバッグ (handbag)</option>
+          <option value="tie">ネクタイ (tie)</option>
+          <option value="suitcase">スーツケース (suitcase)</option>
+          <option value="frisbee">フリスビー (frisbee)</option>
+          <option value="skis">スキー (skis)</option>
+          <option value="snowboard">スノーボード (snowboard)</option>
+          <option value="sports ball">ボール (sports ball)</option>
+          <option value="kite">凧 (kite)</option>
+          <option value="baseball bat">野球バット (baseball bat)</option>
+          <option value="baseball glove">野球グローブ (baseball glove)</option>
+          <option value="skateboard">スケートボード (skateboard)</option>
+          <option value="surfboard">サーフボード (surfboard)</option>
+          <option value="tennis racket">テニスラケット (tennis racket)</option>
+          <option value="bottle">ボトル (bottle)</option>
+          <option value="wine glass">ワイングラス (wine glass)</option>
+          <option value="cup">コップ (cup)</option>
+          <option value="fork">フォーク (fork)</option>
+          <option value="knife">ナイフ (knife)</option>
+          <option value="spoon">スプーン (spoon)</option>
+          <option value="bowl">ボウル (bowl)</option>
+          <option value="banana">バナナ (banana)</option>
+          <option value="apple">りんご (apple)</option>
+          <option value="sandwich">サンドイッチ (sandwich)</option>
+          <option value="orange">オレンジ (orange)</option>
+          <option value="broccoli">ブロッコリー (broccoli)</option>
+          <option value="carrot">にんじん (carrot)</option>
+          <option value="hot dog">ホットドッグ (hot dog)</option>
+          <option value="pizza">ピザ (pizza)</option>
+          <option value="donut">ドーナツ (donut)</option>
+          <option value="cake">ケーキ (cake)</option>
+          <option value="chair">椅子 (chair)</option>
+          <option value="couch">ソファ (couch)</option>
+          <option value="potted plant">植木鉢 (potted plant)</option>
+          <option value="bed">ベッド (bed)</option>
+          <option value="dining table">ダイニングテーブル (dining table)</option>
+          <option value="toilet">トイレ (toilet)</option>
+          <option value="tv">テレビ (tv)</option>
+          <option value="laptop">ノートパソコン (laptop)</option>
+          <option value="mouse">マウス (mouse)</option>
+          <option value="remote">リモコン (remote)</option>
+          <option value="keyboard">キーボード (keyboard)</option>
+          <option value="cell phone">スマホ (cell phone)</option>
+          <option value="microwave">電子レンジ (microwave)</option>
+          <option value="oven">オーブン (oven)</option>
+          <option value="toaster">トースター (toaster)</option>
+          <option value="sink">シンク (sink)</option>
+          <option value="refrigerator">冷蔵庫 (refrigerator)</option>
+          <option value="book">本 (book)</option>
+          <option value="clock">時計 (clock)</option>
+          <option value="vase">花瓶 (vase)</option>
+          <option value="scissors">はさみ (scissors)</option>
+          <option value="teddy bear">ぬいぐるみ (teddy bear)</option>
+          <option value="hair drier">ドライヤー (hair drier)</option>
+          <option value="toothbrush">歯ブラシ (toothbrush)</option>
+        </datalist>
         <div id="quickSelectList" style="display: flex; gap: 5px; flex-wrap: wrap; margin-top: 8px;"></div>
       </div>
-
       <!-- ⚙️ 標準モデル切り替えボタン（Lite0 / Lite2） -->
       <div class="control-group">
         <label for="modelSelect">AIモデル切り替え:</label>
@@ -57,55 +135,45 @@
           <option value="lite2">EfficientDet-Lite2 (高精度)</option>
         </select>
       </div>
-
       <div class="camera-container" style="position: relative; width: 100%; background: #000; border-radius: 8px; overflow: hidden;">
         <video id="video" autoplay muted playsinline style="width: 100%; display: block;"></video>
         <canvas id="outputCanvas" style="position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none;"></canvas>
       </div>
-
       <div class="button-group" style="margin-top: 10px;">
         <button id="startButton" class="primary-btn" onclick="startCamera()" disabled>PCと接続してください</button>
         <button id="stopButton" class="danger-btn" onclick="stopCamera()" style="display:none;">停止</button>
       </div>
-
       <div id="status" class="status-box">ステータス: 初期化中...</div>
-
       <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px;">
         <h3 style="margin: 0; font-size: 14px;">📁 発見したアイテムの履歴</h3>
         <button onclick="clearGallery()" style="padding: 5px 10px; background: #dc3545; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">履歴クリア</button>
       </div>
       <div id="imageGallery" class="gallery" style="display: flex; gap: 10px; overflow-x: auto; padding: 10px 0;"></div>
     </div>
-
     <!-- ================= 物体登録モード画面 ================= -->
     <div id="registerTab" class="tab-content">
       <div class="control-group">
         <label for="registerName">登録するカスタム物体名:</label>
         <input type="text" id="registerName" placeholder="例: pen_case" style="width: 100%; padding: 10px; box-sizing: border-box;">
       </div>
-
       <div style="display: flex; gap: 8px; margin-bottom: 8px;">
         <button onclick="startRegCamera()" style="flex: 1; padding: 10px; background: #17a2b8; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">📱 登録カメラ起動</button>
         <button onclick="stopRegCamera()" style="flex: 1; padding: 10px; background: #6c757d; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">⏹️ カメラ停止</button>
       </div>
-
       <div style="text-align: center; margin-bottom: 8px;">
         <span style="font-size: 12px; color: #aaa; margin-right: 5px;">ガイド枠比率:</span>
         <button onclick="setAspectRatio('square')" style="padding: 5px 10px; font-size: 12px; background: #444; border: 1px solid #ffc107; color: #fff; border-radius: 4px; cursor: pointer;">正方形</button>
         <button onclick="setAspectRatio('landscape')" style="padding: 5px 10px; font-size: 12px; background: #444; border: 1px solid #ffc107; color: #fff; border-radius: 4px; cursor: pointer;">横長</button>
         <button onclick="setAspectRatio('portrait')" style="padding: 5px 10px; font-size: 12px; background: #444; border: 1px solid #ffc107; color: #fff; border-radius: 4px; cursor: pointer;">縦長</button>
       </div>
-
       <div class="camera-container" style="position: relative; width: 100%; background: #000; border-radius: 8px; overflow: hidden;">
         <video id="regVideo" autoplay muted playsinline style="width: 100%; display: block;"></video>
         <div id="regGuideBox" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 160px; height: 160px; border: 3px dashed #ffc107; pointer-events: none; border-radius: 8px;"></div>
       </div>
-
       <div style="display: flex; gap: 8px; margin-top: 10px;">
         <button onclick="captureObject()" style="flex: 1; padding: 12px; background: #ffc107; color: #000; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">📸 物体撮影 (<span id="objCount">0</span>)</button>
         <button onclick="captureBackground()" style="flex: 1; padding: 12px; background: #6c757d; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">🖼️ 背景撮影 (<span id="bgCount">0</span>)</button>
       </div>
-
       <!-- ✂️ 手動クロップモード用セクション -->
       <div style="margin-top: 15px; background: #222; padding: 10px; border-radius: 8px; border: 1px dashed #ffc107;">
         <div style="font-size: 12px; color: #ffc107; font-weight: bold; margin-bottom: 5px;">✂️ 手動クロップモード（精密切り抜き）</div>
@@ -121,7 +189,6 @@
           </div>
         </div>
       </div>
-
       <div style="display: flex; gap: 15px; margin-top: 10px; justify-content: space-around;">
         <div>
           <div style="font-size: 11px; color: #ffc107; margin-bottom: 3px;">物体画像一覧</div>
@@ -132,22 +199,17 @@
           <div id="bgThumbnails" style="display: flex; gap: 4px; min-height: 45px; background: #222; padding: 4px; border-radius: 4px; overflow-x: auto; max-width: 160px;"></div>
         </div>
       </div>
-
       <div class="button-group" style="margin-top: 15px;">
         <button onclick="trainAndRegister()" style="width: 100%; padding: 14px; background: #28a745; color: #fff; border: none; border-radius: 6px; font-weight: bold; font-size: 16px; cursor: pointer;">⚡ AIに学習させて登録完了</button>
       </div>
-
       <div style="margin-top: 8px;">
         <button onclick="clearCustomModel()" style="width: 100%; padding: 10px; background: #dc3545; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">🗑️ 登録した物体・モデルを消去</button>
       </div>
-
       <div id="regStatus" class="status-box" style="margin-top: 10px;">ステータス: 待機中</div>
-
       <h3 style="margin: 20px 0 10px 0; font-size: 14px;">📦 登録済みカスタム物体</h3>
       <div id="registeredList" style="display: flex; gap: 10px; overflow-x: auto; padding: 10px 0;"></div>
     </div>
   </div>
-
   <!-- QRスキャナー制御用スクリプト -->
   <script>
     let html5QrCode = null;
@@ -170,7 +232,6 @@
         alert("カメラの起動に失敗しました: " + err);
       });
     }
-
     function stopQrScanner() {
       if (html5QrCode) {
         html5QrCode.stop().then(() => {
@@ -183,7 +244,6 @@
     }
   </script>
   <script type="module" src="app.js"></script>
-
   <!-- 🔍 画像プレビュー用モーダル -->
   <div id="imagePreviewModal" style="display: none; position: fixed; z-index: 9999; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); align-items: center; justify-content: center; flex-direction: column;" onclick="closePreview()">
     <img id="previewImage" style="max-width: 90%; max-height: 80%; border-radius: 8px; border: 3px solid #00ff00; object-fit: contain;">
