@@ -27,7 +27,7 @@ let lastSaveTime = 0;
 const peer = new Peer();
 let conn = null;
 
-// 撮影データ一時保存用配列（オブジェクトと背景を個別に管理・プレビュー用Canvas/DataURL保持）
+// 撮影データ一時保存用配列
 let capturedObjects = [];     // [{ canvas, dataUrl }]
 let capturedBackgrounds = []; // [{ canvas, dataUrl }]
 
@@ -232,7 +232,7 @@ window.clearCustomModel = function() {
   document.getElementById("regStatus").style.color = "#ff4444";
 };
 
-// 🔴 個別削除機能（登録済み物体の×ボタン）
+// 登録済み物体の個別削除（×ボタン）
 window.removeCustomObject = function(index) {
   const removedObj = customObjects[index];
   customObjects.splice(index, 1);
@@ -253,14 +253,14 @@ window.removeCustomObject = function(index) {
   document.getElementById("regStatus").style.color = "#ffc107";
 };
 
-// 🔴 【追加機能1】撮影中の「背景写真」を個別（×ボタン）で削除する関数
+// 撮影中の「背景写真」の個別削除（×ボタン）
 window.removeBackgroundPhoto = function(index) {
   capturedBackgrounds.splice(index, 1);
   document.getElementById("bgCount").innerText = capturedBackgrounds.length;
   updateBackgroundThumbnailsUI();
 };
 
-// 🔴 【追加機能1】撮影中の「物体写真」を個別（×ボタン）で削除する関数（おまけで便利なので実装）
+// 撮影中の「物体写真」の個別削除（×ボタン）
 window.removeObjectPhoto = function(index) {
   capturedObjects.splice(index, 1);
   document.getElementById("objCount").innerText = capturedObjects.length;
@@ -720,7 +720,7 @@ async function predictWebcam() {
   }
 }
 
-// 🔴 【追加機能2】発見した履歴画像をタップしてプレビューする機能
+// 発見した履歴画像をタップしてプレビューする機能
 function addGalleryThumbnail(dataUrl) {
   const gallery = document.getElementById("imageGallery");
   if (!gallery) return;
@@ -729,7 +729,6 @@ function addGalleryThumbnail(dataUrl) {
   img.src = dataUrl;
   img.style.cssText = "width: 80px; height: 80px; object-fit: cover; border-radius: 8px; border: 2px solid #00ff00; cursor: pointer; flex-shrink: 0;";
   
-  // タップ（クリック）されたときにプレビューモーダルを開く
   img.onclick = () => {
     const modal = document.getElementById("imagePreviewModal");
     const previewImg = document.getElementById("previewImage");
