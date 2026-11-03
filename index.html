@@ -37,39 +37,39 @@
         <div id="connectionStatus" style="font-size: 12px; color: #666; margin-top: 5px;">ステータス: 未接続</div>
       </div>
       <div class="control-group">
-        <label for="targetObject">探すもの (日本語/英語対応):</label>
+        <label for="targetObject">探すもの (カタカナ/英語対応):</label>
         <div style="display: flex; gap: 5px;">
           <input type="text" id="targetObject" value="cup" placeholder="例: コップ または cup" list="coco-suggestions" style="flex: 1;">
           <button onclick="updateTarget()" style="padding: 0 15px; background: #007bff; color: #fff; border: none; font-weight: bold; border-radius: 4px; cursor: pointer;">決定</button>
         </div>
-        <!-- 予測入力（サジェスト）用の候補リスト（日本語対応） -->
+        <!-- 予測入力（サジェスト）用の候補リスト（カタカナ対応） -->
         <datalist id="coco-suggestions">
-          <option value="person">人 (person)</option>
-          <option value="bicycle">自転車 (bicycle)</option>
-          <option value="car">車 (car)</option>
-          <option value="motorcycle">オートバイ (motorcycle)</option>
-          <option value="airplane">飛行機 (airplane)</option>
+          <option value="person">ヒト (person)</option>
+          <option value="bicycle">ジテンシャ (bicycle)</option>
+          <option value="car">クルマ (car)</option>
+          <option value="motorcycle">バイク (motorcycle)</option>
+          <option value="airplane">ヒコウキ (airplane)</option>
           <option value="bus">バス (bus)</option>
-          <option value="train">電車 (train)</option>
+          <option value="train">デンシャ (train)</option>
           <option value="truck">トラック (truck)</option>
           <option value="boat">ボート (boat)</option>
-          <option value="traffic light">信号機 (traffic light)</option>
-          <option value="fire hydrant">消火栓 (fire hydrant)</option>
-          <option value="stop sign">一時停止標識 (stop sign)</option>
+          <option value="traffic light">シンゴウ (traffic light)</option>
+          <option value="fire hydrant">ショウカセン (fire hydrant)</option>
+          <option value="stop sign">イチジテイシ (stop sign)</option>
           <option value="parking meter">パーキングメーター (parking meter)</option>
           <option value="bench">ベンチ (bench)</option>
-          <option value="bird">鳥 (bird)</option>
-          <option value="cat">猫 (cat)</option>
-          <option value="dog">犬 (dog)</option>
-          <option value="horse">馬 (horse)</option>
-          <option value="sheep">羊 (sheep)</option>
-          <option value="cow">牛 (cow)</option>
-          <option value="elephant">象 (elephant)</option>
-          <option value="bear">熊 (bear)</option>
+          <option value="bird">トリ (bird)</option>
+          <option value="cat">ネコ (cat)</option>
+          <option value="dog">イヌ (dog)</option>
+          <option value="horse">ウマ (horse)</option>
+          <option value="sheep">ヒツジ (sheep)</option>
+          <option value="cow">ウシ (cow)</option>
+          <option value="elephant">ゾウ (elephant)</option>
+          <option value="bear">クマ (bear)</option>
           <option value="zebra">シマウマ (zebra)</option>
           <option value="giraffe">キリン (giraffe)</option>
           <option value="backpack">リュック (backpack)</option>
-          <option value="umbrella">傘 (umbrella)</option>
+          <option value="umbrella">カサ (umbrella)</option>
           <option value="handbag">ハンドバッグ (handbag)</option>
           <option value="tie">ネクタイ (tie)</option>
           <option value="suitcase">スーツケース (suitcase)</option>
@@ -77,12 +77,12 @@
           <option value="skis">スキー (skis)</option>
           <option value="snowboard">スノーボード (snowboard)</option>
           <option value="sports ball">ボール (sports ball)</option>
-          <option value="kite">凧 (kite)</option>
-          <option value="baseball bat">野球バット (baseball bat)</option>
-          <option value="baseball glove">野球グローブ (baseball glove)</option>
+          <option value="kite">タコ (kite)</option>
+          <option value="baseball bat">バット (baseball bat)</option>
+          <option value="baseball glove">グローブ (baseball glove)</option>
           <option value="skateboard">スケートボード (skateboard)</option>
           <option value="surfboard">サーフボード (surfboard)</option>
-          <option value="tennis racket">テニスラケット (tennis racket)</option>
+          <option value="tennis racket">ラケット (tennis racket)</option>
           <option value="bottle">ボトル (bottle)</option>
           <option value="wine glass">ワイングラス (wine glass)</option>
           <option value="cup">コップ (cup)</option>
@@ -91,39 +91,39 @@
           <option value="spoon">スプーン (spoon)</option>
           <option value="bowl">ボウル (bowl)</option>
           <option value="banana">バナナ (banana)</option>
-          <option value="apple">りんご (apple)</option>
+          <option value="apple">リンゴ (apple)</option>
           <option value="sandwich">サンドイッチ (sandwich)</option>
           <option value="orange">オレンジ (orange)</option>
           <option value="broccoli">ブロッコリー (broccoli)</option>
-          <option value="carrot">にんじん (carrot)</option>
+          <option value="carrot">ニンジン (carrot)</option>
           <option value="hot dog">ホットドッグ (hot dog)</option>
           <option value="pizza">ピザ (pizza)</option>
           <option value="donut">ドーナツ (donut)</option>
           <option value="cake">ケーキ (cake)</option>
-          <option value="chair">椅子 (chair)</option>
+          <option value="chair">イス (chair)</option>
           <option value="couch">ソファ (couch)</option>
-          <option value="potted plant">植木鉢 (potted plant)</option>
+          <option value="potted plant">ショクブツ (potted plant)</option>
           <option value="bed">ベッド (bed)</option>
-          <option value="dining table">ダイニングテーブル (dining table)</option>
+          <option value="dining table">テーブル (dining table)</option>
           <option value="toilet">トイレ (toilet)</option>
           <option value="tv">テレビ (tv)</option>
-          <option value="laptop">ノートパソコン (laptop)</option>
+          <option value="laptop">パソコン (laptop)</option>
           <option value="mouse">マウス (mouse)</option>
           <option value="remote">リモコン (remote)</option>
           <option value="keyboard">キーボード (keyboard)</option>
           <option value="cell phone">スマホ (cell phone)</option>
-          <option value="microwave">電子レンジ (microwave)</option>
+          <option value="microwave">レンジ (microwave)</option>
           <option value="oven">オーブン (oven)</option>
           <option value="toaster">トースター (toaster)</option>
           <option value="sink">シンク (sink)</option>
-          <option value="refrigerator">冷蔵庫 (refrigerator)</option>
-          <option value="book">本 (book)</option>
-          <option value="clock">時計 (clock)</option>
-          <option value="vase">花瓶 (vase)</option>
-          <option value="scissors">はさみ (scissors)</option>
-          <option value="teddy bear">ぬいぐるみ (teddy bear)</option>
+          <option value="refrigerator">レイゾウコ (refrigerator)</option>
+          <option value="book">ホン (book)</option>
+          <option value="clock">トケイ (clock)</option>
+          <option value="vase">カビン (vase)</option>
+          <option value="scissors">ハサミ (scissors)</option>
+          <option value="teddy bear">ヌイグルミ (teddy bear)</option>
           <option value="hair drier">ドライヤー (hair drier)</option>
-          <option value="toothbrush">歯ブラシ (toothbrush)</option>
+          <option value="toothbrush">ハブラシ (toothbrush)</option>
         </datalist>
         <div id="quickSelectList" style="display: flex; gap: 5px; flex-wrap: wrap; margin-top: 8px;"></div>
       </div>
