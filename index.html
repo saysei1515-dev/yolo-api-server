@@ -3,20 +3,21 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI探偵カメラ（独自物体カスタム学習）</title>
+  <title>AI探偵カメラ（YOLOv8対応版）</title>
   <link rel="stylesheet" href="style.css">
 
-  <!-- MediaPipe & PeerJS & TensorFlow.js & MobileNet & QRスキャナーCDN -->
+  <!-- MediaPipe & PeerJS & TensorFlow.js & MobileNet & ONNX Runtime (YOLO用) & QRスキャナー -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.2"></script>
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
   <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
 </head>
 <body>
 
   <div class="app-container">
-    <h1>🔍 AI探偵カメラ (カスタム学習)</h1>
+    <h1>🔍 AI探偵カメラ (YOLO対応)</h1>
 
     <!-- 🔗 モード切り替えタブ -->
     <div class="tab-menu">
@@ -32,17 +33,15 @@
           <input type="text" id="pcIdInput" placeholder="PC側のIDを入力 or QRスキャン" style="flex: 1;">
           <button onclick="connectToPC()" style="padding: 0 15px; background: #007bff; color: #fff; border: none; font-weight: bold; border-radius: 4px; cursor: pointer;">接続</button>
         </div>
-        <!-- QRコードスキャンボタン & リーダー表示エリア -->
         <button onclick="startQrScanner()" style="width: 100%; padding: 8px; background: #28a745; color: #fff; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 13px;">📷 PCのQRコードをスキャン</button>
         <div id="qr-reader" style="width: 100%; max-width: 260px; margin: 10px auto; display: none;"></div>
-        
         <div id="connectionStatus" style="font-size: 12px; color: #666; margin-top: 5px;">ステータス: 未接続</div>
       </div>
 
       <div class="control-group">
         <label for="targetObject">探すもの:</label>
         <div style="display: flex; gap: 5px;">
-          <input type="text" id="targetObject" value="cup" placeholder="例: cup" style="flex: 1;">
+          <input type="text" id="targetObject" value="cup" placeholder="例: cup または person" style="flex: 1;">
           <button onclick="updateTarget()" style="padding: 0 15px; background: #007bff; color: #fff; border: none; font-weight: bold; border-radius: 4px; cursor: pointer;">決定</button>
         </div>
         <div id="quickSelectList" style="display: flex; gap: 5px; flex-wrap: wrap; margin-top: 8px;"></div>
@@ -53,6 +52,7 @@
         <select id="modelSelect" onchange="changeModel()">
           <option value="lite0">EfficientDet-Lite0 (標準)</option>
           <option value="lite2">EfficientDet-Lite2 (高精度)</option>
+          <option value="yolov8">YOLOv8n (超高速・汎用)</option>
         </select>
       </div>
 
@@ -104,7 +104,6 @@
         <button onclick="captureBackground()" style="flex: 1; padding: 12px; background: #6c757d; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">🖼️ 背景撮影 (<span id="bgCount">0</span>)</button>
       </div>
 
-      <!-- ✂️ 手動クロップモード用セクション（復活部分） -->
       <div style="margin-top: 15px; background: #222; padding: 10px; border-radius: 8px; border: 1px dashed #ffc107;">
         <div style="font-size: 12px; color: #ffc107; font-weight: bold; margin-bottom: 5px;">✂️ 手動クロップモード（精密切り抜き）</div>
         <button onclick="captureAndCropMode()" style="width: 100%; padding: 10px; background: #e83e8c; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">🖼️ 現在の映像をキャプチャして範囲を囲む</button>
@@ -148,7 +147,6 @@
 
   </div>
 
-  <!-- QRスキャナー起動用スクリプト -->
   <script>
     let html5QrCode = null;
     function startQrScanner() {
