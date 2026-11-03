@@ -517,31 +517,38 @@ function updateBackgroundThumbnailsUI() {
   });
 }
 
-// ✏️ 編集モードに入る関数（✨ 修正：過去の物体写真・背景写真の両方を復元して下部に並べ、×で消去・編集できる状態にする）
+// ✏️ 編集モードに入る関数（✨ 修正：すべての保存済み物体写真・背景写真を完全に復元する）
 window.startEditingObject = function(index) {
   editingObjectIndex = index;
   const obj = customObjects[index];
   document.getElementById("registerName").value = obj.name;
 
-  // 1. 過去に保存された「物体写真」を復元してサムネイルに表示
+  // 1. 保存されているすべての「物体写真（thumbnails）」を復元
   capturedObjects = [];
-  if (obj.thumbnail) {
-    const tempImg = new Image();
-    tempImg.onload = function() {
-      const c = document.createElement("canvas");
-      c.width = 224; c.height = 224;
-      c.getContext("2d").drawImage(tempImg, 0, 0, 224, 224);
-      capturedObjects.push({ canvas: c, dataUrl: obj.thumbnail });
-      document.getElementById("objCount").innerText = capturedObjects.length;
-      updateObjectThumbnailsUI();
-    };
-    tempImg.src = obj.thumbnail;
+  const objThumbList = obj.thumbnails || (obj.thumbnail ? [obj.thumbnail] : []);
+  if (objThumbList.length > 0) {
+    objThumbList.forEach(url => {
+      const tempImg = new Image();
+      tempImg.onload = function() {
+        const c = document.createElement("canvas");
+        c.width = 224; c.height = 224;
+        c.getContext("2d").drawImage(tempImg, 0, 0, 224, 224);
+        capturedObjects.push({ canvas: c, dataUrl: url });
+        document.getElementById("objCount").innerText = capturedObjects.length;
+        updateObjectThumbnailsUI();
+      };
+      tempImg.src = url;
+    });
+  } else {
+    document.getElementById("objCount").innerText = "0";
+    document.getElementById("objThumbnails").innerHTML = "";
   }
 
-  // 2. 過去に保存された「背景写真」を復元してサムネイルに表示
+  // 2. 保存されているすべての「背景写真」を復元
   capturedBackgrounds = [];
-  if (obj.backgroundThumbnails && Array.isArray(obj.backgroundThumbnails)) {
-    obj.backgroundThumbnails.forEach(bgUrl => {
+  const bgThumbList = obj.backgroundThumbnails || [];
+  if (bgThumbList.length > 0) {
+    bgThumbList.forEach(bgUrl => {
       const tempBgImg = new Image();
       tempBgImg.onload = function() {
         const cBg = document.createElement("canvas");
@@ -791,7 +798,6 @@ window.trainAndRegister = async function() {
   const name = document.getElementById("registerName").value.trim().toLowerCase();
   if (!name) { alert("登録する物体名を入力してください！"); return; }
   
-  // ✨ 修正：新規登録時だけでなく編集モード時も、写真をすべて消して0枚になった場合はエラーにする
   if (capturedObjects.length === 0) { 
     alert("物体を1枚以上撮影してください！"); 
     return; 
@@ -802,6 +808,7 @@ window.trainAndRegister = async function() {
   document.getElementById("regStatus").style.color = "#ffc107";
   try {
     let objEmbeddings = [];
+    let objThumbnailsList = [];
     let bgEmbeddings = [];
     let bgThumbnailsList = [];
 
@@ -809,6 +816,7 @@ window.trainAndRegister = async function() {
 
     for (let item of capturedObjects) {
       if (!item.canvas) continue; 
+      objThumbnailsList.push(item.dataUrl);
 
       for (let angle of angles) {
         const rotCanvas = document.createElement("canvas");
@@ -842,9 +850,10 @@ window.trainAndRegister = async function() {
       const targetObj = customObjects[editingObjectIndex];
       targetObj.name = name;
       targetObj.embeddings = objEmbeddings;
+      targetObj.thumbnails = objThumbnailsList;
       targetObj.backgrounds = bgEmbeddings;
       targetObj.backgroundThumbnails = bgThumbnailsList;
-      targetObj.thumbnail = capturedObjects[0].dataUrl;
+      targetObj.thumbnail = objThumbnailsList[0];
 
       document.getElementById("regStatus").innerText = `🎉 「${name}」のデータを更新しました！`;
       alert(`「${name}」のデータを更新しました！`);
@@ -853,9 +862,10 @@ window.trainAndRegister = async function() {
       const newObjectData = {
         name: name,
         embeddings: objEmbeddings,
+        thumbnails: objThumbnailsList,
         backgrounds: bgEmbeddings,
         backgroundThumbnails: bgThumbnailsList,
-        thumbnail: capturedObjects[0].dataUrl
+        thumbnail: objThumbnailsList[0]
       };
       customObjects.push(newObjectData);
       document.getElementById("regStatus").innerText = `🎉 「${name}」の登録が完了しました！`;
