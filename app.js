@@ -140,9 +140,101 @@ window.changeModel = async function() {
   }
 };
 
+// 🌐 日本語→英語変換対応のターゲット更新関数
 window.updateTarget = function() {
-  const inputVal = document.getElementById("targetObject").value.trim().toLowerCase();
+  let inputVal = document.getElementById("targetObject").value.trim().toLowerCase();
   if (!inputVal) { alert("探すものを入力してください！"); return; }
+
+  // 日本語入力に対応する辞書マップ
+  const jpToEnMap = {
+    "人": "person", "ひと": "person",
+    "自転車": "bicycle", "チャリ": "bicycle",
+    "車": "car", "くるま": "car",
+    "オートバイ": "motorcycle", "バイク": "motorcycle",
+    "飛行機": "airplane",
+    "バス": "bus",
+    "電車": "train", "列車": "train",
+    "トラック": "truck",
+    "ボート": "boat", "船": "boat",
+    "信号機": "traffic light", "信号": "traffic light",
+    "消火栓": "fire hydrant",
+    "一時停止標識": "stop sign",
+    "パーキングメーター": "parking meter",
+    "ベンチ": "bench",
+    "鳥": "bird", "とり": "bird",
+    "猫": "cat", "ねこ": "cat",
+    "犬": "dog", "いぬ": "dog",
+    "馬": "horse", "うま": "horse",
+    "羊": "sheep", "ひつじ": "sheep",
+    "牛": "cow", "うし": "cow",
+    "象": "elephant", "ぞう": "elephant",
+    "熊": "bear", "くま": "bear",
+    "シマウマ": "zebra",
+    "キリン": "giraffe",
+    "リュック": "backpack", "リュックサック": "backpack",
+    "傘": "umbrella", "かさ": "umbrella",
+    "ハンドバッグ": "handbag",
+    "ネクタイ": "tie",
+    "スーツケース": "suitcase",
+    "フリスビー": "frisbee",
+    "スキー": "skis",
+    "スノーボード": "snowboard",
+    "ボール": "sports ball", "スポーツボール": "sports ball",
+    "凧": "kite", "たこ": "kite",
+    "野球バット": "baseball bat", "バット": "baseball bat",
+    "野球グローブ": "baseball glove", "グローブ": "baseball glove",
+    "スケートボード": "skateboard",
+    "サーフボード": "surfboard",
+    "テニスラケット": "tennis racket", "ラケット": "tennis racket",
+    "ボトル": "bottle", "ペットボトル": "bottle",
+    "ワイングラス": "wine glass",
+    "コップ": "cup", "カップ": "cup", "マグカップ": "cup",
+    "フォーク": "fork",
+    "ナイフ": "knife",
+    "スプーン": "spoon",
+    "ボウル": "bowl", "お椀": "bowl",
+    "バナナ": "banana",
+    "りんご": "apple", "リンゴ": "apple",
+    "サンドイッチ": "sandwich",
+    "オレンジ": "orange",
+    "ブロッコリー": "broccoli",
+    "にんじん": "carrot", "人参": "carrot",
+    "ホットドッグ": "hot dog",
+    "ピザ": "pizza",
+    "ドーナツ": "donut",
+    "ケーキ": "cake",
+    "椅子": "chair", "いす": "chair",
+    "ソファ": "couch", "ソファー": "couch",
+    "植木鉢": "potted plant", "植物": "potted plant",
+    "ベッド": "bed",
+    "ダイニングテーブル": "dining table", "テーブル": "dining table", "机": "dining table",
+    "トイレ": "toilet",
+    "テレビ": "tv", "tv": "tv",
+    "ノートパソコン": "laptop", "パソコン": "laptop", "PC": "laptop",
+    "マウス": "mouse",
+    "リモコン": "remote",
+    "キーボード": "keyboard",
+    "スマホ": "cell phone", "スマートフォン": "cell phone", "携帯": "cell phone",
+    "電子レンジ": "microwave", "レンジ": "microwave",
+    "オーブン": "oven",
+    "トースター": "toaster",
+    "シンク": "sink", "流し台": "sink",
+    "冷蔵庫": "refrigerator",
+    "本": "book", "書籍": "book",
+    "時計": "clock", "置時計": "clock", "掛け時計": "clock",
+    "花瓶": "vase",
+    "はさみ": "scissors", "ハサミ": "scissors",
+    "ぬいぐるみ": "teddy bear",
+    "ドライヤー": "hair drier", "ヘアードライヤー": "hair drier",
+    "歯ブラシ": "toothbrush"
+  };
+
+  // 入力が日本語辞書にあれば英語に自動変換
+  if (jpToEnMap[inputVal]) {
+    inputVal = jpToEnMap[inputVal];
+    document.getElementById("targetObject").value = inputVal; // 入力欄も綺麗な英語に更新
+  }
+
   currentSearchWord = inputVal;
   status.innerText = `🎯 「${currentSearchWord}」を探します`;
   status.style.color = "#00ff00";
