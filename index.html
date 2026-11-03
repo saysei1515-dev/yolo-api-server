@@ -104,6 +104,23 @@
         <button onclick="captureBackground()" style="flex: 1; padding: 12px; background: #6c757d; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">🖼️ 背景撮影 (<span id="bgCount">0</span>)</button>
       </div>
 
+      <!-- ✂️ 手動クロップモード用セクション（復活部分） -->
+      <div style="margin-top: 15px; background: #222; padding: 10px; border-radius: 8px; border: 1px dashed #ffc107;">
+        <div style="font-size: 12px; color: #ffc107; font-weight: bold; margin-bottom: 5px;">✂️ 手動クロップモード（精密切り抜き）</div>
+        <button onclick="captureAndCropMode()" style="width: 100%; padding: 10px; background: #e83e8c; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">🖼️ 現在の映像をキャプチャして範囲を囲む</button>
+
+        <div id="crop-section" style="display: none; margin-top: 10px; text-align: center;">
+          <p style="font-size: 11px; color: #fff; margin: 5px 0;">指やマウスで物体を四角く囲んでください</p>
+          <div style="position: relative; display: inline-block;">
+            <canvas id="cropCanvas" style="max-width: 100%; border: 2px solid #ff0055; cursor: crosshair; touch-action: none;"></canvas>
+          </div>
+          <div style="display: flex; gap: 5px; margin-top: 8px;">
+            <button onclick="confirmCrop()" style="flex: 1; padding: 8px; background: #28a745; color: #fff; border: none; border-radius: 4px; font-weight: bold; cursor: pointer;">✅ 確定</button>
+            <button onclick="cancelCrop()" style="flex: 1; padding: 8px; background: #6c757d; color: #fff; border: none; border-radius: 4px; font-weight: bold; cursor: pointer;">❌ キャンセル</button>
+          </div>
+        </div>
+      </div>
+
       <div style="display: flex; gap: 15px; margin-top: 10px; justify-content: space-around;">
         <div>
           <div style="font-size: 11px; color: #ffc107; margin-bottom: 3px;">物体画像一覧</div>
