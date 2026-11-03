@@ -6,9 +6,8 @@ let webcamRunning = false;
 let vision = undefined;
 let mobilenetModel = undefined;
 
-// 複数の登録データを管理できるように配列（またはオブジェクトのリスト）に変更、または既存の仕組みに合わせた構造
-// ここでは複数のカスタム物体を保持できるよう管理します
-let customObjects = []; // 例: [{ name: "pen_case", embeddings: [...], backgrounds: [...] }]
+// 複数のカスタム登録データを保持するリスト
+let customObjects = []; 
 let useCustomModel = false;
 let activeCustomName = "";
 let currentAspect = 'square'; // ガイド枠の比率
@@ -107,13 +106,13 @@ peer.on('call', (call) => {
     webcamRunning = true;
     startButton.style.display = "none";
     stopButton.style.display = "block";
-    status.innerText = `ステータス: 探索中... (${currentSearchWord})`;
+    status.innerText = `ステータス: 探索中... (${useCustomModel ? activeCustomName : currentSearchWord})`;
     status.style.color = "#00ff00";
     video.onloadeddata = () => { predictWebcam(); };
   });
 });
 
-// モデル切り替え
+// モデル切り替え（Lite0 / Lite2 / 登録した物体の検知）
 window.changeModel = async function() {
   const selectedModel = document.getElementById("modelSelect").value;
   if (selectedModel === "custom") {
@@ -133,6 +132,7 @@ window.changeModel = async function() {
         scoreThreshold: 0.3,
         runningMode: runningMode
       });
+      status.innerText = `ステータス: 標準モデル(${selectedModel})で探索中`;
     } catch (err) { console.error(err); }
   }
 };
@@ -233,7 +233,7 @@ window.clearCustomModel = function() {
   document.getElementById("regStatus").style.color = "#ff4444";
 };
 
-// 🔴 個別削除機能
+// 🔴 個別削除機能（×ボタン押下時）
 window.removeCustomObject = function(index) {
   const removedObj = customObjects[index];
   customObjects.splice(index, 1);
@@ -246,7 +246,6 @@ window.removeCustomObject = function(index) {
     if (customOption) customOption.remove();
     document.getElementById("quickSelectList").innerHTML = "";
   } else {
-    // まだ残っていれば先頭のものをアクティブに
     activeCustomName = customObjects[0].name;
   }
 
@@ -476,7 +475,6 @@ window.trainAndRegister = async function() {
       });
     }
 
-    // 新しい物体データをカスタムオブジェクトリストに追加
     const newObjectData = {
       name: name,
       embeddings: objEmbeddings,
@@ -496,7 +494,6 @@ window.trainAndRegister = async function() {
     document.getElementById("regStatus").innerText = `🎉 「${name}」の登録が完了しました！`;
     document.getElementById("regStatus").style.color = "#00ff00";
 
-    // リストのUIを更新（×ボタン付きで再描画）
     updateRegisteredListUI();
 
     capturedObjects = [];
@@ -571,7 +568,6 @@ async function predictWebcam() {
               return Array.from(embedding.dataSync());
             });
 
-            // 登録されているすべてのカスタム物体と比較して、最も一致するものを探す
             let bestMatchName = "";
             let maxOverallSimilarity = 0;
 
@@ -626,7 +622,7 @@ async function predictWebcam() {
         }
 
       } else if (objectDetector) {
-        // 【標準モデルモード】
+        // 【標準モデルモード（Lite0 / Lite2）】
         const detections = objectDetector.detectForVideo(video, performance.now());
         if (detections && detections.detections) {
           const scaleX = canvas.width / video.videoWidth;
