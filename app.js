@@ -11,9 +11,9 @@ let useCustomModel = false;
 let activeCustomName = "";
 let currentAspect = 'square'; // ガイド枠の比率
 
-// 現在編集中のカスタム物体のインデックス（nullなら新規登録モード）
+// 編集モード管理用
 let editingObjectIndex = null;
-let originalEditingName = ""; // 編集キャンセル時に名前を戻すため
+let originalEditingName = "";
 
 const video = document.getElementById("video");
 const canvas = document.getElementById("outputCanvas");
@@ -327,14 +327,13 @@ function updateBackgroundThumbnailsUI() {
   });
 }
 
-// 🔴 編集モードに入る関数
+// 編集モードに入る関数
 window.startEditingObject = function(index) {
   editingObjectIndex = index;
   const obj = customObjects[index];
   originalEditingName = obj.name;
   document.getElementById("registerName").value = obj.name;
   
-  // 編集用の一時保存配列をクリア
   capturedObjects = [];
   capturedBackgrounds = [];
   document.getElementById("objCount").innerText = "0";
@@ -349,7 +348,7 @@ window.startEditingObject = function(index) {
   document.getElementById("registerName").scrollIntoView({ behavior: 'smooth' });
 };
 
-// 🔴 編集モードを終了する関数（データを追加せずにキャンセル）
+// 編集モードを終了する関数（データを追加せずにキャンセル）
 window.cancelEditingObject = function() {
   if (editingObjectIndex !== null) {
     const objName = customObjects[editingObjectIndex].name;
@@ -399,7 +398,6 @@ function updateRegisteredListUI() {
     lbl.style.cssText = `font-size: 10px; color: ${isEditing ? '#ffc107' : '#fff'}; margin-top: 3px; font-weight: bold;`;
     container.appendChild(lbl);
 
-    // 🔴 写真の下に小さく「編集モード」または「終了」ボタンを配置
     const editBtnContainer = document.createElement("div");
     editBtnContainer.style.cssText = "margin-top: 5px; display: flex; gap: 3px; justify-content: center;";
 
@@ -570,26 +568,41 @@ window.cancelCrop = function() {
     document.getElementById('crop-section').style.display = "none";
 };
 
-// ⚡ AI特徴量ベクトル抽出・登録 / 追加処理
+// ⚡ 【精度向上・自動回転(データ拡張)】AI特徴量ベクトル抽出・登録 / 追加処理
 window.trainAndRegister = async function() {
   const name = document.getElementById("registerName").value.trim().toLowerCase();
   if (!name) { alert("登録する物体名を入力してください！"); return; }
   if (capturedObjects.length === 0) { alert("物体を1枚以上撮影してください！"); return; }
   if (!mobilenetModel) { alert("MobileNetモデルがまだロードされていません。"); return; }
 
-  document.getElementById("regStatus").innerText = "⚡ AI特徴量を解析中...";
+  document.getElementById("regStatus").innerText = "⚡ 回転データ拡張 & AI特徴量を解析中...";
   document.getElementById("regStatus").style.color = "#ffc107";
   try {
     let objEmbeddings = [];
     let bgEmbeddings = [];
 
+    // 45°刻みで8方向の角度を生成して学習（データ拡張）
+    const angles = [0, 45, 90, 135, 180, 225, 270, 315];
+
     for (let item of capturedObjects) {
-      tf.tidy(() => {
-        const tensor = tf.browser.fromPixels(item.canvas).toFloat().expandDims(0);
-        const embedding = mobilenetModel.infer(tensor, true);
-        objEmbeddings.push(Array.from(embedding.dataSync()));
-      });
+      for (let angle of angles) {
+        const rotCanvas = document.createElement("canvas");
+        rotCanvas.width = 224;
+        rotCanvas.height = 224;
+        const rotCtx = rotCanvas.getContext("2d");
+
+        rotCtx.translate(112, 112);
+        rotCtx.rotate((angle * Math.PI) / 180);
+        rotCtx.drawImage(item.canvas, -112, -112);
+
+        tf.tidy(() => {
+          const tensor = tf.browser.fromPixels(rotCanvas).toFloat().expandDims(0);
+          const embedding = mobilenetModel.infer(tensor, true);
+          objEmbeddings.push(Array.from(embedding.dataSync()));
+        });
+      }
     }
+
     for (let item of capturedBackgrounds) {
       tf.tidy(() => {
         const tensor = tf.browser.fromPixels(item.canvas).toFloat().expandDims(0);
@@ -599,7 +612,6 @@ window.trainAndRegister = async function() {
     }
 
     if (editingObjectIndex !== null) {
-      // 🔴 編集モード（既存の物体にデータを追加して保存）
       const targetObj = customObjects[editingObjectIndex];
       targetObj.name = name;
       targetObj.embeddings.push(...objEmbeddings);
@@ -613,7 +625,6 @@ window.trainAndRegister = async function() {
       alert(`「${name}」に新しいデータを追加しました！`);
       editingObjectIndex = null;
     } else {
-      // 🟢 新規登録モード
       const newObjectData = {
         name: name,
         embeddings: objEmbeddings,
@@ -696,6 +707,7 @@ async function predictWebcam() {
 
             if (width < 20 || height < 20) continue;
 
+            // 枠内を正方形（224x224）に強制変換してMobileNetへ入力
             const cropCanvas = document.createElement("canvas");
             cropCanvas.width = 224;
             cropCanvas.height = 224;
