@@ -313,35 +313,100 @@ function updateBackgroundThumbnailsUI() {
   });
 }
 
-// 登録リストのUI更新と×ボタン描画
+// 🔴 【追加機能】既存の登録済み物体に、後からデータ（物体/背景）を追加する関数
+window.addExtraObjectData = async function(index, type) {
+  const regVideo = document.getElementById("regVideo");
+  if (!regVideo || !regVideo.srcObject) {
+    alert("先に「登録カメラ起動」ボタンを押してカメラを起動してください！");
+    return;
+  }
+  if (!mobilenetModel) {
+    alert("MobileNetモデルがまだロードされていません。");
+    return;
+  }
+
+  const canvas = cropGuideArea();
+  if (!canvas) {
+    alert("ガイド枠内の切り取りに失敗しました。");
+    return;
+  }
+
+  document.getElementById("regStatus").innerText = "⚡ 追加データを解析中...";
+  document.getElementById("regStatus").style.color = "#ffc107";
+
+  try {
+    let newEmbedding = null;
+    tf.tidy(() => {
+      const tensor = tf.browser.fromPixels(canvas).toFloat().expandDims(0);
+      const embedding = mobilenetModel.infer(tensor, true);
+      newEmbedding = Array.from(embedding.dataSync());
+    });
+
+    const targetObj = customObjects[index];
+    if (type === 'object') {
+      targetObj.embeddings.push(newEmbedding);
+      document.getElementById("regStatus").innerText = `➕ 「${targetObj.name}」に物体データを追加しました！`;
+    } else if (type === 'background') {
+      targetObj.backgrounds.push(newEmbedding);
+      document.getElementById("regStatus").innerText = `🖼️ 「${targetObj.name}」に背景データを追加しました！`;
+    }
+    document.getElementById("regStatus").style.color = "#00ff00";
+    alert(`「${targetObj.name}」に新しいデータを追加しました！`);
+  } catch (err) {
+    console.error(err);
+    alert("データ追加中にエラーが発生しました: " + err.message);
+  }
+};
+
+// 登録リストのUI更新と追加ボタン・×ボタン描画
 function updateRegisteredListUI() {
   const registeredList = document.getElementById("registeredList");
   registeredList.innerHTML = "";
 
   customObjects.forEach((obj, idx) => {
     const container = document.createElement("div");
-    container.style.cssText = "position: relative; display: inline-block; text-align: center; margin-right: 10px;";
+    container.style.cssText = "position: relative; display: inline-block; text-align: center; margin-right: 15px; background: #222; padding: 8px; border-radius: 8px;";
     
+    // サムネイル画像
     const thumb = document.createElement("img");
     thumb.src = obj.thumbnail;
-    thumb.style.cssText = "width: 70px; height: 70px; object-fit: cover; border-radius: 6px; border: 2px solid #28a745; cursor: pointer;";
+    thumb.style.cssText = "width: 70px; height: 70px; object-fit: cover; border-radius: 6px; border: 2px solid #28a745; cursor: pointer; display: block; margin: 0 auto;";
     thumb.onclick = () => selectCustomTarget(obj.name);
     container.appendChild(thumb);
 
+    // ×ボタン（個別削除）
     const deleteBtn = document.createElement("button");
     deleteBtn.innerText = "×";
-    deleteBtn.style.cssText = "position: absolute; top: -5px; right: -5px; background: #dc3545; color: #fff; border: none; border-radius: 50%; width: 20px; height: 20px; font-size: 12px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center;";
+    deleteBtn.style.cssText = "position: absolute; top: -3px; right: -3px; background: #dc3545; color: #fff; border: none; border-radius: 50%; width: 20px; height: 20px; font-size: 12px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center;";
     deleteBtn.onclick = (e) => {
       e.stopPropagation();
       removeCustomObject(idx);
     };
     container.appendChild(deleteBtn);
 
+    // 名前ラベル
     const lbl = document.createElement("div");
     lbl.innerText = obj.name; 
-    lbl.style.cssText = "font-size: 10px; color: #fff; margin-top: 2px;";
+    lbl.style.cssText = "font-size: 11px; color: #fff; margin-top: 4px; font-weight: bold;";
     container.appendChild(lbl);
 
+    // 🔴 【追加機能UI】後から写真を追加するボタン群
+    const btnGroup = document.createElement("div");
+    btnGroup.style.cssText = "display: flex; gap: 4px; margin-top: 6px;";
+    
+    const addObjBtn = document.createElement("button");
+    addObjBtn.innerText = "➕物体";
+    addObjBtn.style.cssText = "flex: 1; padding: 3px 2px; font-size: 10px; background: #ffc107; color: #000; border: none; border-radius: 3px; font-weight: bold; cursor: pointer;";
+    addObjBtn.onclick = () => addExtraObjectData(idx, 'object');
+    btnGroup.appendChild(addObjBtn);
+
+    const addBgBtn = document.createElement("button");
+    addBgBtn.innerText = "➕背景";
+    addBgBtn.style.cssText = "flex: 1; padding: 3px 2px; font-size: 10px; background: #6c757d; color: #fff; border: none; border-radius: 3px; font-weight: bold; cursor: pointer;";
+    addBgBtn.onclick = () => addExtraObjectData(idx, 'background');
+    btnGroup.appendChild(addBgBtn);
+
+    container.appendChild(btnGroup);
     registeredList.appendChild(container);
   });
 }
