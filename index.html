@@ -6,11 +6,12 @@
   <title>AI探偵カメラ（独自物体カスタム学習）</title>
   <link rel="stylesheet" href="style.css">
 
-  <!-- MediaPipe & PeerJS & TensorFlow.js & MobileNet -->
+  <!-- MediaPipe & PeerJS & TensorFlow.js & MobileNet & QRスキャナーCDN -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.2"></script>
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.0"></script>
+  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
 </head>
 <body>
 
@@ -27,20 +28,23 @@
     <div id="searchTab" class="tab-content active">
       <div class="control-group" style="border: 2px solid #007bff; background: #f0f7ff;">
         <label for="pcIdInput" style="color: #007bff;">🔗 PC接続用ID:</label>
-        <div style="display: flex; gap: 5px;">
-          <input type="text" id="pcIdInput" placeholder="PC側のIDを入力" style="flex: 1;">
+        <div style="display: flex; gap: 5px; margin-bottom: 8px;">
+          <input type="text" id="pcIdInput" placeholder="PC側のIDを入力 or QRスキャン" style="flex: 1;">
           <button onclick="connectToPC()" style="padding: 0 15px; background: #007bff; color: #fff; border: none; font-weight: bold; border-radius: 4px; cursor: pointer;">接続</button>
         </div>
+        <!-- QRコードスキャンボタン & リーダー表示エリア -->
+        <button onclick="startQrScanner()" style="width: 100%; padding: 8px; background: #28a745; color: #fff; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 13px;">📷 PCのQRコードをスキャン</button>
+        <div id="qr-reader" style="width: 100%; max-width: 260px; margin: 10px auto; display: none;"></div>
+        
         <div id="connectionStatus" style="font-size: 12px; color: #666; margin-top: 5px;">ステータス: 未接続</div>
       </div>
 
       <div class="control-group">
         <label for="targetObject">探すもの:</label>
         <div style="display: flex; gap: 5px;">
-          <input type="text" id="targetObject" value="cup" placeholder="例: cup または カスタム名" style="flex: 1;">
+          <input type="text" id="targetObject" value="cup" placeholder="例: cup" style="flex: 1;">
           <button onclick="updateTarget()" style="padding: 0 15px; background: #007bff; color: #fff; border: none; font-weight: bold; border-radius: 4px; cursor: pointer;">決定</button>
         </div>
-        <!-- 登録済みカスタムアイテムのワンタップ選択肢 -->
         <div id="quickSelectList" style="display: flex; gap: 5px; flex-wrap: wrap; margin-top: 8px;"></div>
       </div>
 
@@ -62,10 +66,10 @@
         <button id="stopButton" class="danger-btn" onclick="stopCamera()" style="display:none;">停止</button>
       </div>
 
-      <div id="status" class="status-box">ステータス: AIモデルをロード中...</div>
+      <div id="status" class="status-box">ステータス: 初期化中...</div>
 
       <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px;">
-        <h3 style="margin: 0;">📁 発見したアイテムの履歴</h3>
+        <h3 style="margin: 0; font-size: 14px;">📁 発見したアイテムの履歴</h3>
         <button onclick="clearGallery()" style="padding: 5px 10px; background: #dc3545; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px;">履歴クリア</button>
       </div>
       <div id="imageGallery" class="gallery" style="display: flex; gap: 10px; overflow-x: auto; padding: 10px 0;"></div>
@@ -75,54 +79,31 @@
     <div id="registerTab" class="tab-content">
       <div class="control-group">
         <label for="registerName">登録するカスタム物体名:</label>
-        <input type="text" id="registerName" placeholder="例: pen_case, my_keys" style="width: 100%; padding: 10px; box-sizing: border-box;">
+        <input type="text" id="registerName" placeholder="例: pen_case" style="width: 100%; padding: 10px; box-sizing: border-box;">
       </div>
 
-      <!-- カメラ起動 ＆ 停止ボタン -->
       <div style="display: flex; gap: 8px; margin-bottom: 8px;">
         <button onclick="startRegCamera()" style="flex: 1; padding: 10px; background: #17a2b8; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">📱 登録カメラ起動</button>
         <button onclick="stopRegCamera()" style="flex: 1; padding: 10px; background: #6c757d; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">⏹️ カメラ停止</button>
       </div>
 
-      <!-- ✂️ ガイド枠の縦横比率切り替えボタン -->
       <div style="text-align: center; margin-bottom: 8px;">
         <span style="font-size: 12px; color: #aaa; margin-right: 5px;">ガイド枠比率:</span>
-        <button onclick="setAspectRatio('square')" style="padding: 5px 10px; font-size: 12px; background: #444; border: 1px solid #ffc107; color: #fff; border-radius: 4px; cursor: pointer;">正方形(1:1)</button>
-        <button onclick="setAspectRatio('landscape')" style="padding: 5px 10px; font-size: 12px; background: #444; border: 1px solid #ffc107; color: #fff; border-radius: 4px; cursor: pointer;">横長(2:1)</button>
-        <button onclick="setAspectRatio('portrait')" style="padding: 5px 10px; font-size: 12px; background: #444; border: 1px solid #ffc107; color: #fff; border-radius: 4px; cursor: pointer;">縦長(1:2)</button>
+        <button onclick="setAspectRatio('square')" style="padding: 5px 10px; font-size: 12px; background: #444; border: 1px solid #ffc107; color: #fff; border-radius: 4px; cursor: pointer;">正方形</button>
+        <button onclick="setAspectRatio('landscape')" style="padding: 5px 10px; font-size: 12px; background: #444; border: 1px solid #ffc107; color: #fff; border-radius: 4px; cursor: pointer;">横長</button>
+        <button onclick="setAspectRatio('portrait')" style="padding: 5px 10px; font-size: 12px; background: #444; border: 1px solid #ffc107; color: #fff; border-radius: 4px; cursor: pointer;">縦長</button>
       </div>
 
       <div class="camera-container" style="position: relative; width: 100%; background: #000; border-radius: 8px; overflow: hidden;">
         <video id="regVideo" autoplay muted playsinline style="width: 100%; display: block;"></video>
-        <!-- 可変式の黄色いガイド枠 -->
-        <div id="regGuideBox" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 160px; height: 160px; border: 3px dashed #ffc107; pointer-events: none; border-radius: 8px; box-shadow: 0 0 0 9999px rgba(0,0,0,0.5); transition: width 0.2s, height 0.2s;"></div>
+        <div id="regGuideBox" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 160px; height: 160px; border: 3px dashed #ffc107; pointer-events: none; border-radius: 8px;"></div>
       </div>
-      <p style="font-size: 11px; color: #ffc107; margin-top: 5px; text-align: center;">⚠️ ガイド枠内に収め、角度を変えて複数枚撮影してください</p>
 
-      <!-- 撮影アクションボタン -->
       <div style="display: flex; gap: 8px; margin-top: 10px;">
-        <button onclick="captureObject()" style="flex: 1; padding: 12px; background: #ffc107; color: #000; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">📸 物体(クラス0)撮影 (<span id="objCount">0</span>)</button>
-        <button onclick="captureBackground()" style="flex: 1; padding: 12px; background: #6c757d; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">🖼️ 背景(クラス1)撮影 (<span id="bgCount">0</span>)</button>
+        <button onclick="captureObject()" style="flex: 1; padding: 12px; background: #ffc107; color: #000; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">📸 物体撮影 (<span id="objCount">0</span>)</button>
+        <button onclick="captureBackground()" style="flex: 1; padding: 12px; background: #6c757d; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">🖼️ 背景撮影 (<span id="bgCount">0</span>)</button>
       </div>
 
-      <!-- ✂️ 手動クロップモード用セクション -->
-      <div style="margin-top: 15px; background: #222; padding: 10px; border-radius: 8px; border: 1px dashed #ffc107;">
-        <div style="font-size: 12px; color: #ffc107; font-weight: bold; margin-bottom: 5px;">✂️ 手動クロップモード（精密切り抜き）</div>
-        <button onclick="captureAndCropMode()" style="width: 100%; padding: 10px; background: #e83e8c; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">🖼️ 現在の映像をキャプチャして範囲を囲む</button>
-
-        <div id="crop-section" style="display: none; margin-top: 10px; text-align: center;">
-          <p style="font-size: 11px; color: #fff; margin: 5px 0;">指やマウスで物体を四角く囲んでください</p>
-          <div style="position: relative; display: inline-block;">
-            <canvas id="cropCanvas" style="max-width: 100%; border: 2px solid #ff0055; cursor: crosshair; touch-action: none;"></canvas>
-          </div>
-          <div style="display: flex; gap: 5px; margin-top: 8px;">
-            <button onclick="confirmCrop()" style="flex: 1; padding: 8px; background: #28a745; color: #fff; border: none; border-radius: 4px; font-weight: bold; cursor: pointer;">✅ この範囲で物体登録</button>
-            <button onclick="cancelCrop()" style="flex: 1; padding: 8px; background: #6c757d; color: #fff; border: none; border-radius: 4px; font-weight: bold; cursor: pointer;">❌ キャンセル</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- サムネイル表示 -->
       <div style="display: flex; gap: 15px; margin-top: 10px; justify-content: space-around;">
         <div>
           <div style="font-size: 11px; color: #ffc107; margin-bottom: 3px;">物体画像一覧</div>
@@ -135,21 +116,46 @@
       </div>
 
       <div class="button-group" style="margin-top: 15px;">
-        <button onclick="trainAndRegister()" style="width: 100%; padding: 14px; background: #28a745; color: #fff; border: none; border-radius: 6px; font-weight: bold; font-size: 16px; cursor: pointer;">⚡ AIに学習させて登録完了 (Epochs:30)</button>
+        <button onclick="trainAndRegister()" style="width: 100%; padding: 14px; background: #28a745; color: #fff; border: none; border-radius: 6px; font-weight: bold; font-size: 16px; cursor: pointer;">⚡ AIに学習させて登録完了</button>
       </div>
 
-      <!-- 登録した物体を消去するボタン -->
       <div style="margin-top: 8px;">
         <button onclick="clearCustomModel()" style="width: 100%; padding: 10px; background: #dc3545; color: #fff; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">🗑️ 登録した物体・モデルを消去</button>
       </div>
 
-      <div id="regStatus" class="status-box" style="margin-top: 10px;">ステータス: スマホカメラを起動し、物体と背景を複数角度から撮影してください</div>
+      <div id="regStatus" class="status-box" style="margin-top: 10px;">ステータス: 待機中</div>
 
-      <h3 style="margin: 20px 0 10px 0; font-size: 16px;">📦 登録済みカスタム物体</h3>
+      <h3 style="margin: 20px 0 10px 0; font-size: 14px;">📦 登録済みカスタム物体</h3>
       <div id="registeredList" style="display: flex; gap: 10px; overflow-x: auto; padding: 10px 0;"></div>
     </div>
 
   </div>
+
+  <!-- QRスキャナー起動用スクリプト -->
+  <script>
+    let html5QrCode = null;
+    function startQrScanner() {
+      const readerContainer = document.getElementById("qr-reader");
+      readerContainer.style.display = "block";
+      if (!html5QrCode) {
+        html5QrCode = new Html5Qrcode("qr-reader");
+      }
+      html5QrCode.start(
+        { facingMode: "environment" },
+        { fps: 10, qrbox: { width: 200, height: 200 } },
+        (decodedText) => {
+          document.getElementById("pcIdInput").value = decodedText;
+          html5QrCode.stop().then(() => {
+            readerContainer.style.display = "none";
+          }).catch(err => console.error(err));
+          alert("PCのIDを読み込みました！「接続」ボタンを押してください。");
+        },
+        (errorMessage) => {}
+      ).catch(err => {
+        alert("カメラの起動に失敗しました: " + err);
+      });
+    }
+  </script>
 
   <script type="module" src="app.js"></script>
 </body>
