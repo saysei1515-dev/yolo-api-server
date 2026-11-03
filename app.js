@@ -1,4 +1,4 @@
-import { ObjectDetector, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.2";
+Import { ObjectDetector, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.2";
 
 let objectDetector = undefined;
 let runningMode = "VIDEO";
@@ -8,7 +8,6 @@ let mobilenetModel = undefined;
 
 // 特徴量蓄積用データベース（物体と背景）
 let registeredEmbeddings = []; 
-let averageRegisteredEmbedding = null; // 平均ベクトル（セントロイド）
 let backgroundEmbeddings = []; 
 let useCustomModel = false;
 let activeCustomName = "";
@@ -43,6 +42,7 @@ const modelPaths = {
 async function initializeAI() {
   status.innerText = "ステータス: AIモデルをロード中...";
   status.style.color = "#ffc107";
+
   try {
     vision = await FilesetResolver.forVisionTasks(
       "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.2/wasm"
@@ -59,6 +59,7 @@ async function initializeAI() {
   } catch (err) {
     console.warn("MediaPipeのロードに失敗しました:", err);
   }
+
   try {
     mobilenetModel = await mobilenet.load();
     status.innerText = "ステータス: PCのIDを入力して接続してください";
@@ -69,12 +70,14 @@ async function initializeAI() {
     status.style.color = "#ff4444";
   }
 }
+
 initializeAI();
 
 // タブ切り替え
 window.switchTab = function(tabName) {
   document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
   document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+
   if (tabName === 'search') {
     document.querySelector('.tab-menu button:nth-child(1)').classList.add('active');
     document.getElementById('searchTab').classList.add('active');
@@ -88,8 +91,10 @@ window.switchTab = function(tabName) {
 window.connectToPC = function() {
   const pcId = document.getElementById("pcIdInput").value.trim();
   if (!pcId) { alert("PCのIDを入力してください！"); return; }
+
   connStatus.innerText = "ステータス: 接続中...";
   conn = peer.connect(pcId);
+
   conn.on('open', () => {
     connStatus.innerText = "ステータス: 接続完了 ✅";
     connStatus.style.color = "#28a745";
@@ -196,6 +201,7 @@ window.setAspectRatio = function(type) {
   currentAspect = type;
   const guideBox = document.getElementById("regGuideBox");
   if (!guideBox) return;
+
   if (type === 'square') {
     guideBox.style.width = '160px';
     guideBox.style.height = '160px';
@@ -210,23 +216,27 @@ window.setAspectRatio = function(type) {
 
 window.clearCustomModel = function() {
   if (!confirm("登録した物体データとカスタムモデルを消去しますか？")) return;
+
   registeredEmbeddings = [];
-  averageRegisteredEmbedding = null;
   backgroundEmbeddings = [];
   useCustomModel = false;
   activeCustomName = "";
+
   capturedObjects = [];
   capturedBackgrounds = [];
   document.getElementById("objCount").innerText = "0";
   document.getElementById("bgCount").innerText = "0";
   document.getElementById("objThumbnails").innerHTML = "";
   document.getElementById("bgThumbnails").innerHTML = "";
+
   document.getElementById("registeredList").innerHTML = "";
   document.getElementById("quickSelectList").innerHTML = "";
+
   const modelSelect = document.getElementById("modelSelect");
   const customOption = modelSelect.querySelector('option[value="custom"]');
   if (customOption) { customOption.remove(); }
   modelSelect.value = "lite0";
+
   document.getElementById("registerName").value = "";
   document.getElementById("regStatus").innerText = "ステータス: すべての登録データを消去しました";
   document.getElementById("regStatus").style.color = "#ff4444";
@@ -240,23 +250,30 @@ function cropGuideArea() {
   const regVideo = document.getElementById("regVideo");
   const guideBox = document.getElementById("regGuideBox");
   if (!regVideo || !regVideo.srcObject || !guideBox) return null;
+
   const tempCanvas = document.createElement("canvas");
   tempCanvas.width = 224;
   tempCanvas.height = 224;
   const tempCtx = tempCanvas.getContext("2d");
+
   const vW = regVideo.videoWidth;
   const vH = regVideo.videoHeight;
   const dW = regVideo.clientWidth;
   const dH = regVideo.clientHeight;
+
   if (vW === 0 || vH === 0) return null;
+
   const sX = vW / dW;
   const sY = vH / dH;
+
   const gRect = guideBox.getBoundingClientRect();
   const vRect = regVideo.getBoundingClientRect();
+
   const cW = gRect.width * sX;
   const cH = gRect.height * sY;
   const cX = (gRect.left - vRect.left) * sX;
   const cY = (gRect.top - vRect.top) * sY;
+
   tempCtx.drawImage(regVideo, cX, cY, cW, cH, 0, 0, 224, 224);
   return tempCanvas;
 }
@@ -266,6 +283,7 @@ window.captureObject = function() {
   if (!canvas) { alert("先にカメラを起動してください"); return; }
   capturedObjects.push(canvas);
   document.getElementById("objCount").innerText = capturedObjects.length;
+
   const img = document.createElement("img");
   img.src = canvas.toDataURL("image/jpeg");
   img.style.width = "40px"; img.style.height = "40px"; img.style.objectFit = "cover"; img.style.borderRadius = "4px";
@@ -277,48 +295,65 @@ window.captureBackground = function() {
   if (!canvas) { alert("先にカメラを起動してください"); return; }
   capturedBackgrounds.push(canvas);
   document.getElementById("bgCount").innerText = capturedBackgrounds.length;
+
   const img = document.createElement("img");
   img.src = canvas.toDataURL("image/jpeg");
   img.style.width = "40px"; img.style.height = "40px"; img.style.objectFit = "cover"; img.style.borderRadius = "4px";
   document.getElementById("bgThumbnails").appendChild(img);
 };
 
-// ================= ✂️ 手動クロップモード用 =================
+// ================= ✂️ 手動切り取り（クロップ）機能 =================
 let capturedImageBitmap = null;
 let isDrawing = false;
 let startX = 0, startY = 0, endX = 0, endY = 0;
 
 window.captureAndCropMode = function() {
     const regVideo = document.getElementById('regVideo');
-    if (!regVideo) { alert("登録用カメラの要素が見つかりません。"); return; }
+    if (!regVideo) {
+        alert("登録用カメラの要素が見つかりません。");
+        return;
+    }
+
     const width = regVideo.videoWidth;
     const height = regVideo.videoHeight;
-    if (!width || !height) { alert("カメラの映像が準備できていません。"); return; }
+
+    if (!width || !height) {
+        alert("カメラの映像がまだ準備できていません。「登録カメラ起動」を押して映像が映るのを確認してから押してください。");
+        return;
+    }
+
     const tempCanvas = document.createElement('canvas');
     tempCanvas.width = width;
     tempCanvas.height = height;
     const tempCtx = tempCanvas.getContext('2d');
     tempCtx.drawImage(regVideo, 0, 0, width, height);
+
     const img = new Image();
     img.onload = function() {
         const cropCanvas = document.getElementById('cropCanvas');
         const cropSection = document.getElementById('crop-section');
         if (!cropCanvas || !cropSection) return;
+
         const displayWidth = 320;
         const displayHeight = (img.height / img.width) * displayWidth;
+
         cropCanvas.width = displayWidth;
         cropCanvas.height = displayHeight;
         cropCanvas.style.width = "100%";
         cropCanvas.style.height = "auto";
+
         const ctxCrop = cropCanvas.getContext('2d');
         ctxCrop.clearRect(0, 0, displayWidth, displayHeight);
         ctxCrop.drawImage(img, 0, 0, displayWidth, displayHeight);
+
         capturedImageBitmap = img;
+
         cropSection.style.display = "block";
         cropSection.scrollIntoView({ behavior: 'smooth' });
+
         const regStatus = document.getElementById("regStatus");
         if (regStatus) {
-            regStatus.innerText = "ステータス: 範囲をドラッグして囲んでください。";
+            regStatus.innerText = "ステータス: 写真が読み込まれました。範囲をドラッグしてください。";
             regStatus.style.color = "#ffc107";
         }
     };
@@ -328,32 +363,67 @@ window.captureAndCropMode = function() {
 const cropCanvas = document.getElementById('cropCanvas');
 if (cropCanvas) {
     const ctxCrop = cropCanvas.getContext('2d');
+
     function getCursorPos(e) {
         const rect = cropCanvas.getBoundingClientRect();
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
         const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
         const scaleX = cropCanvas.width / rect.width;
         const scaleY = cropCanvas.height / rect.height;
-        return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
+
+        return {
+            x: (clientX - rect.left) * scaleX,
+            y: (clientY - rect.top) * scaleY
+        };
     }
-    cropCanvas.onmousedown = (e) => { isDrawing = true; const pos = getCursorPos(e); startX = pos.x; startY = pos.y; endX = startX; endY = startY; };
-    cropCanvas.ontouchstart = (e) => { isDrawing = true; const pos = getCursorPos(e); startX = pos.x; startY = pos.y; endX = startX; endY = startY; };
+
+    cropCanvas.onmousedown = (e) => {
+        isDrawing = true;
+        const pos = getCursorPos(e);
+        startX = pos.x;
+        startY = pos.y;
+        endX = startX;
+        endY = startY;
+    };
+
+    cropCanvas.ontouchstart = (e) => {
+        isDrawing = true;
+        const pos = getCursorPos(e);
+        startX = pos.x;
+        startY = pos.y;
+        endX = startX;
+        endY = startY;
+    };
+
     cropCanvas.onmousemove = (e) => {
         if (!isDrawing || !capturedImageBitmap) return;
-        const pos = getCursorPos(e); endX = pos.x; endY = pos.y;
+        const pos = getCursorPos(e);
+        endX = pos.x;
+        endY = pos.y;
+
         ctxCrop.clearRect(0, 0, cropCanvas.width, cropCanvas.height);
         ctxCrop.drawImage(capturedImageBitmap, 0, 0, cropCanvas.width, cropCanvas.height);
-        ctxCrop.strokeStyle = "#ff0055"; ctxCrop.lineWidth = 4;
+
+        ctxCrop.strokeStyle = "#ff0055";
+        ctxCrop.lineWidth = 4;
         ctxCrop.strokeRect(startX, startY, endX - startX, endY - startY);
     };
+
     cropCanvas.ontouchmove = (e) => {
         if (!isDrawing || !capturedImageBitmap) return;
-        const pos = getCursorPos(e); endX = pos.x; endY = pos.y;
+        const pos = getCursorPos(e);
+        endX = pos.x;
+        endY = pos.y;
+
         ctxCrop.clearRect(0, 0, cropCanvas.width, cropCanvas.height);
         ctxCrop.drawImage(capturedImageBitmap, 0, 0, cropCanvas.width, cropCanvas.height);
-        ctxCrop.strokeStyle = "#ff0055"; ctxCrop.lineWidth = 4;
+
+        ctxCrop.strokeStyle = "#ff0055";
+        ctxCrop.lineWidth = 4;
         ctxCrop.strokeRect(startX, startY, endX - startX, endY - startY);
     };
+
     cropCanvas.onmouseup = () => { isDrawing = false; };
     cropCanvas.ontouchend = () => { isDrawing = false; };
 }
@@ -363,16 +433,30 @@ window.confirmCrop = function() {
         alert("切り取りたい範囲をしっかり囲んでください！");
         return;
     }
-    const x = Math.min(startX, endX); const y = Math.min(startY, endY);
-    const w = Math.abs(endX - startX); const h = Math.abs(endY - startY);
+
+    const x = Math.min(startX, endX);
+    const y = Math.min(startY, endY);
+    const w = Math.abs(endX - startX);
+    const h = Math.abs(endY - startY);
+
     const cutCanvas = document.createElement('canvas');
-    cutCanvas.width = 224; cutCanvas.height = 224;
+    cutCanvas.width = 224;
+    cutCanvas.height = 224;
     const cutCtx = cutCanvas.getContext('2d');
+
     const scaleX = capturedImageBitmap.width / cropCanvas.width;
     const scaleY = capturedImageBitmap.height / cropCanvas.height;
-    cutCtx.drawImage(capturedImageBitmap, x * scaleX, y * scaleY, w * scaleX, h * scaleY, 0, 0, 224, 224);
+
+    cutCtx.drawImage(
+        capturedImageBitmap, 
+        x * scaleX, y * scaleY, w * scaleX, h * scaleY,
+        0, 0, 224, 224
+    );
+
     capturedObjects.push(cutCanvas);
-    document.getElementById("objCount").innerText = capturedObjects.length;
+    const objCountElem = document.getElementById("objCount");
+    if (objCountElem) objCountElem.innerText = capturedObjects.length;
+
     const thumbContainer = document.getElementById("objThumbnails");
     if (thumbContainer) {
         const img = document.createElement("img");
@@ -380,23 +464,36 @@ window.confirmCrop = function() {
         img.style.width = "40px"; img.style.height = "40px"; img.style.objectFit = "cover"; img.style.borderRadius = "4px";
         thumbContainer.appendChild(img);
     }
-    document.getElementById('crop-section').style.display = "none";
-    document.getElementById("regStatus").innerText = "ステータス: 手動クロップ領域を追加しました！";
-    document.getElementById("regStatus").style.color = "#00ff00";
+
+    const cropSection = document.getElementById('crop-section');
+    if (cropSection) cropSection.style.display = "none";
+
+    const regStatus = document.getElementById("regStatus");
+    if (regStatus) {
+        regStatus.innerText = "ステータス: 手動で切り抜いた領域を物体データに追加しました！";
+        regStatus.style.color = "#00ff00";
+    }
 };
 
 window.cancelCrop = function() {
-    document.getElementById('crop-section').style.display = "none";
+    const cropSection = document.getElementById('crop-section');
+    if (cropSection) cropSection.style.display = "none";
 };
 
-// ⚡ AI特徴量ベクトル抽出・平均化登録処理
+// ⚡ AI特徴量ベクトル抽出・登録処理
 window.trainAndRegister = async function() {
   const name = document.getElementById("registerName").value.trim().toLowerCase();
   if (!name) { alert("登録する物体名を入力してください！"); return; }
-  if (capturedObjects.length === 0) { alert("物体を1枚以上撮影してください！"); return; }
-  if (!mobilenetModel) { alert("MobileNetモデルがロード中です。"); return; }
+  if (capturedObjects.length === 0) {
+    alert("物体（クラス0）を1枚以上撮影してください！");
+    return;
+  }
+  if (!mobilenetModel) {
+    alert("MobileNetモデルがまだロードされていません。少し待ってから再度お試しください。");
+    return;
+  }
 
-  document.getElementById("regStatus").innerText = "⚡ AI特徴量を高精度平均化中...";
+  document.getElementById("regStatus").innerText = "⚡ AI特徴量を解析・登録中...";
   document.getElementById("regStatus").style.color = "#ffc107";
 
   try {
@@ -419,17 +516,8 @@ window.trainAndRegister = async function() {
       });
     }
 
-    // 平均ベクトル（セントロイド）計算
-    if (registeredEmbeddings.length > 0) {
-      const dim = registeredEmbeddings[0].length;
-      averageRegisteredEmbedding = new Array(dim).fill(0);
-      for (let emb of registeredEmbeddings) {
-        for (let i = 0; i < dim; i++) { averageRegisteredEmbedding[i] += emb[i]; }
-      }
-      for (let i = 0; i < dim; i++) { averageRegisteredEmbedding[i] /= registeredEmbeddings.length; }
-    }
-
     activeCustomName = name;
+
     const modelSelect = document.getElementById("modelSelect");
     if (!document.querySelector('#modelSelect option[value="custom"]')) {
       modelSelect.innerHTML += `<option value="custom">AIカスタム: ${name}</option>`;
@@ -439,13 +527,15 @@ window.trainAndRegister = async function() {
     modelSelect.value = "custom";
     useCustomModel = true;
 
-    document.getElementById("regStatus").innerText = `🎉 「${name}」のAI高精度登録が完了しました！`;
+    document.getElementById("regStatus").innerText = `🎉 「${name}」のAI登録が完了しました！`;
     document.getElementById("regStatus").style.color = "#00ff00";
 
     const registeredList = document.getElementById("registeredList");
     registeredList.innerHTML = "";
+
     const container = document.createElement("div");
-    container.style.textAlign = "center"; container.style.cursor = "pointer";
+    container.style.textAlign = "center";
+    container.style.cursor = "pointer";
     container.onclick = () => selectCustomTarget(name);
 
     const thumb = document.createElement("img");
@@ -468,21 +558,25 @@ window.trainAndRegister = async function() {
       quickBtn.appendChild(btn);
     }
 
-    capturedObjects = []; capturedBackgrounds = [];
+    capturedObjects = [];
+    capturedBackgrounds = [];
     document.getElementById("objCount").innerText = "0";
     document.getElementById("bgCount").innerText = "0";
     document.getElementById("objThumbnails").innerHTML = "";
     document.getElementById("bgThumbnails").innerHTML = "";
 
     alert(`「${name}」の登録が完了しました！`);
+
   } catch (err) {
     console.error(err);
-    alert("登録エラー: " + err.message);
+    alert("登録中にエラーが発生しました: " + err.message);
   }
 };
 
 function calculateCosineSimilarity(vecA, vecB) {
-  let dotProduct = 0, normA = 0, normB = 0;
+  let dotProduct = 0;
+  let normA = 0;
+  let normB = 0;
   for (let i = 0; i < vecA.length; i++) {
     dotProduct += vecA[i] * vecB[i];
     normA += vecA[i] * vecA[i];
@@ -491,9 +585,10 @@ function calculateCosineSimilarity(vecA, vecB) {
   return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
-// ================= AI並みの動的マルチ領域スキャン＆高精度推論ループ =================
+// ================= リアルタイム推論ループ（しきい値0.3設定） =================
 async function predictWebcam() {
   if (!webcamRunning) return;
+
   if (video.videoWidth > 0 && video.videoHeight > 0) {
     const displayWidth = video.clientWidth;
     const displayHeight = video.clientHeight;
@@ -509,73 +604,79 @@ async function predictWebcam() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       let foundTarget = false;
 
-      if (useCustomModel && averageRegisteredEmbedding && mobilenetModel) {
-        const vW = video.videoWidth;
-        const vH = video.videoHeight;
+      if (useCustomModel && registeredEmbeddings.length > 0 && mobilenetModel) {
 
-        if (vW > 0 && vH > 0) {
-          // ⭐ AI並みのマルチ領域スキャン（画面の複数ポジションを動的に切り出してチェック）
-          // 中央、左上、右上、左下、右下の5箇所のエリア候補をスキャン
-          const regions = [
-            { x: vW * 0.2, y: vH * 0.2, w: vW * 0.6, h: vH * 0.6, dx: canvas.width * 0.2, dy: canvas.height * 0.2, dw: canvas.width * 0.6, dh: canvas.height * 0.6 }, // 中央
-            { x: 0, y: 0, w: vW * 0.5, h: vH * 0.5, dx: 0, dy: 0, dw: canvas.width * 0.5, dh: canvas.height * 0.5 }, // 左上
-            { x: vW * 0.5, y: 0, w: vW * 0.5, h: vH * 0.5, dx: canvas.width * 0.5, dy: 0, dw: canvas.width * 0.5, dh: canvas.height * 0.5 }, // 右上
-            { x: 0, y: vH * 0.5, w: vW * 0.5, h: vH * 0.5, dx: 0, dy: canvas.height * 0.5, dw: canvas.width * 0.5, dh: canvas.height * 0.5 }, // 左下
-            { x: vW * 0.5, y: vH * 0.5, w: vW * 0.5, h: vH * 0.5, dx: canvas.width * 0.5, dy: canvas.height * 0.5, dw: canvas.width * 0.5, dh: canvas.height * 0.5 }  // 右下
-          ];
+        const checkCanvas = document.createElement("canvas");
+        checkCanvas.width = 50;
+        checkCanvas.height = 50;
+        const checkCtx = checkCanvas.getContext("2d");
+        checkCtx.drawImage(video, 0, 0, 50, 50);
+        const imgData = checkCtx.getImageData(0, 0, 50, 50).data;
 
-          let bestMatchScore = 0;
-          let bestRegion = null;
+        let totalBrightness = 0;
+        for (let i = 0; i < imgData.length; i += 4) {
+          totalBrightness += (imgData[i] * 0.299 + imgData[i+1] * 0.587 + imgData[i+2] * 0.114);
+        }
+        const avgBrightness = totalBrightness / (imgData.length / 4);
 
-          for (let reg of regions) {
-            const cropCanvas = document.createElement("canvas");
-            cropCanvas.width = 224; cropCanvas.height = 224;
-            const cropCtx = cropCanvas.getContext("2d");
-            cropCtx.drawImage(video, reg.x, reg.y, reg.w, reg.h, 0, 0, 224, 224);
+        if (avgBrightness > 25) {
 
-            const currentEmbedding = tf.tidy(() => {
-              const tensor = tf.browser.fromPixels(cropCanvas).toFloat().expandDims(0);
-              const embedding = mobilenetModel.infer(tensor, true);
-              return Array.from(embedding.dataSync());
-            });
+          const cropCanvas = document.createElement("canvas");
+          cropCanvas.width = 224;
+          cropCanvas.height = 224;
+          const cropCtx = cropCanvas.getContext("2d");
 
-            const avgSimilarity = calculateCosineSimilarity(currentEmbedding, averageRegisteredEmbedding);
-            let maxObjSimilarity = avgSimilarity;
-            for (let rEmb of registeredEmbeddings) {
-              const sim = calculateCosineSimilarity(currentEmbedding, rEmb);
-              if (sim > maxObjSimilarity) maxObjSimilarity = sim;
-            }
+          const vW = video.videoWidth;
+          const vH = video.videoHeight;
+          const sW = vW * 0.6;
+          const sH = vH * 0.6;
+          const sX = vW * 0.2;
+          const sY = vH * 0.2;
 
-            let maxBgSimilarity = 0;
-            for (let bgEmb of backgroundEmbeddings) {
-              const bgSim = calculateCosineSimilarity(currentEmbedding, bgEmb);
-              if (bgSim > maxBgSimilarity) maxBgSimilarity = bgSim;
-            }
+          cropCtx.drawImage(video, sX, sY, sW, sH, 0, 0, 224, 224);
 
-            const threshold = 0.3; // しきい値
-            if (maxObjSimilarity >= threshold && maxObjSimilarity > maxBgSimilarity) {
-              if (maxObjSimilarity > bestMatchScore) {
-                bestMatchScore = maxObjSimilarity;
-                bestRegion = reg;
-              }
+          const currentEmbedding = tf.tidy(() => {
+            const tensor = tf.browser.fromPixels(cropCanvas).toFloat().expandDims(0);
+            const embedding = mobilenetModel.infer(tensor, true);
+            return Array.from(embedding.dataSync());
+          });
+
+          let maxObjSimilarity = 0;
+          for (let regEmb of registeredEmbeddings) {
+            const similarity = calculateCosineSimilarity(currentEmbedding, regEmb);
+            if (similarity > maxObjSimilarity) {
+              maxObjSimilarity = similarity;
             }
           }
 
-          if (bestRegion) {
+          let maxBgSimilarity = 0;
+          for (let bgEmb of backgroundEmbeddings) {
+            const bgSimilarity = calculateCosineSimilarity(currentEmbedding, bgEmb);
+            if (bgSimilarity > maxBgSimilarity) {
+              maxBgSimilarity = bgSimilarity;
+            }
+          }
+
+          // しきい値を0.3（30%）に変更
+          const threshold = 0.3;
+          if (maxObjSimilarity >= threshold && maxObjSimilarity > maxBgSimilarity) {
             foundTarget = true;
-            const boxX = bestRegion.dx;
-            const boxY = bestRegion.dy;
-            const boxW = bestRegion.dw;
-            const boxH = bestRegion.dh;
+
+            const boxX = canvas.width * 0.2;
+            const boxY = canvas.height * 0.2;
+            const boxW = canvas.width * 0.6;
+            const boxH = canvas.height * 0.6;
 
             ctx.strokeStyle = "#00ff00";
             ctx.lineWidth = 5;
             ctx.strokeRect(boxX, boxY, boxW, boxH);
+
             ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
             ctx.fillRect(boxX, boxY, boxW, 35);
+
             ctx.fillStyle = "#00ff00";
             ctx.font = "bold 16px sans-serif";
-            ctx.fillText(`✨ ${activeCustomName} (${Math.round(bestMatchScore * 100)}%)`, boxX + 10, boxY + 23);
+            ctx.fillText(`✨ ${activeCustomName} (${Math.round(maxObjSimilarity * 100)}%)`, boxX + 10, boxY + 23);
 
             const now = Date.now();
             if (now - lastSaveTime > 3000) {
@@ -584,14 +685,17 @@ async function predictWebcam() {
             }
           }
         }
+
       } else if (objectDetector) {
         const detections = objectDetector.detectForVideo(video, performance.now());
         if (detections && detections.detections) {
           const scaleX = canvas.width / video.videoWidth;
           const scaleY = canvas.height / video.videoHeight;
+
           for (let detection of detections.detections) {
             const categoryName = detection.categories[0].categoryName.toLowerCase();
             const score = Math.round(detection.categories[0].score * 100);
+
             if (categoryName.includes(currentSearchWord)) {
               foundTarget = true;
               const bbox = detection.boundingBox;
@@ -623,7 +727,7 @@ async function predictWebcam() {
         status.innerText = `🎉 発見しました！`;
         status.style.color = "#00ff00";
       } else {
-        status.innerText = `🔍 AI探索中...`;
+        status.innerText = `🔍 探索中...`;
         status.style.color = "#aaa";
       }
     } catch (e) { console.error(e); }
