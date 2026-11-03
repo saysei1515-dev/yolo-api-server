@@ -6,7 +6,6 @@ let webcamRunning = false;
 let vision = undefined;
 let mobilenetModel = undefined;
 
-// 複数のカスタム登録データを保持するリスト
 let customObjects = []; 
 let useCustomModel = false;
 let activeCustomName = "";
@@ -28,9 +27,9 @@ let lastSaveTime = 0;
 const peer = new Peer();
 let conn = null;
 
-// 撮影データ一時保存用配列
-let capturedObjects = [];
-let capturedBackgrounds = [];
+// 撮影データ一時保存用配列（オブジェクトと背景を個別に管理・プレビュー用Canvas/DataURL保持）
+let capturedObjects = [];     // [{ canvas, dataUrl }]
+let capturedBackgrounds = []; // [{ canvas, dataUrl }]
 
 const modelPaths = {
   lite0: "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/float16/1/efficientdet_lite0.tflite",
@@ -112,7 +111,7 @@ peer.on('call', (call) => {
   });
 });
 
-// モデル切り替え（Lite0 / Lite2 / 登録した物体の検知）
+// モデル切り替え
 window.changeModel = async function() {
   const selectedModel = document.getElementById("modelSelect").value;
   if (selectedModel === "custom") {
@@ -233,7 +232,7 @@ window.clearCustomModel = function() {
   document.getElementById("regStatus").style.color = "#ff4444";
 };
 
-// 🔴 個別削除機能（×ボタン押下時）
+// 🔴 個別削除機能（登録済み物体の×ボタン）
 window.removeCustomObject = function(index) {
   const removedObj = customObjects[index];
   customObjects.splice(index, 1);
@@ -254,7 +253,67 @@ window.removeCustomObject = function(index) {
   document.getElementById("regStatus").style.color = "#ffc107";
 };
 
-// 登録リストのUI更新と×ボタン描画関数
+// 🔴 【追加機能1】撮影中の「背景写真」を個別（×ボタン）で削除する関数
+window.removeBackgroundPhoto = function(index) {
+  capturedBackgrounds.splice(index, 1);
+  document.getElementById("bgCount").innerText = capturedBackgrounds.length;
+  updateBackgroundThumbnailsUI();
+};
+
+// 🔴 【追加機能1】撮影中の「物体写真」を個別（×ボタン）で削除する関数（おまけで便利なので実装）
+window.removeObjectPhoto = function(index) {
+  capturedObjects.splice(index, 1);
+  document.getElementById("objCount").innerText = capturedObjects.length;
+  updateObjectThumbnailsUI();
+};
+
+// 物体サムネイルのUI再描画（×ボタン付き）
+function updateObjectThumbnailsUI() {
+  const thumbContainer = document.getElementById("objThumbnails");
+  thumbContainer.innerHTML = "";
+  capturedObjects.forEach((item, idx) => {
+    const wrap = document.createElement("div");
+    wrap.style.cssText = "position: relative; display: inline-block;";
+    
+    const img = document.createElement("img");
+    img.src = item.dataUrl;
+    img.style.cssText = "width: 40px; height: 40px; object-fit: cover; border-radius: 4px; display: block;";
+    wrap.appendChild(img);
+
+    const delBtn = document.createElement("button");
+    delBtn.innerText = "×";
+    delBtn.style.cssText = "position: absolute; top: -4px; right: -4px; background: #dc3545; color: #fff; border: none; border-radius: 50%; width: 16px; height: 16px; font-size: 10px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center;";
+    delBtn.onclick = () => removeObjectPhoto(idx);
+    wrap.appendChild(delBtn);
+
+    thumbContainer.appendChild(wrap);
+  });
+}
+
+// 背景サムネイルのUI再描画（×ボタン付き）
+function updateBackgroundThumbnailsUI() {
+  const bgContainer = document.getElementById("bgThumbnails");
+  bgContainer.innerHTML = "";
+  capturedBackgrounds.forEach((item, idx) => {
+    const wrap = document.createElement("div");
+    wrap.style.cssText = "position: relative; display: inline-block;";
+    
+    const img = document.createElement("img");
+    img.src = item.dataUrl;
+    img.style.cssText = "width: 40px; height: 40px; object-fit: cover; border-radius: 4px; display: block;";
+    wrap.appendChild(img);
+
+    const delBtn = document.createElement("button");
+    delBtn.innerText = "×";
+    delBtn.style.cssText = "position: absolute; top: -4px; right: -4px; background: #dc3545; color: #fff; border: none; border-radius: 50%; width: 16px; height: 16px; font-size: 10px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center;";
+    delBtn.onclick = () => removeBackgroundPhoto(idx);
+    wrap.appendChild(delBtn);
+
+    bgContainer.appendChild(wrap);
+  });
+}
+
+// 登録リストのUI更新と×ボタン描画
 function updateRegisteredListUI() {
   const registeredList = document.getElementById("registeredList");
   registeredList.innerHTML = "";
@@ -263,14 +322,12 @@ function updateRegisteredListUI() {
     const container = document.createElement("div");
     container.style.cssText = "position: relative; display: inline-block; text-align: center; margin-right: 10px;";
     
-    // サムネイル画像
     const thumb = document.createElement("img");
     thumb.src = obj.thumbnail;
     thumb.style.cssText = "width: 70px; height: 70px; object-fit: cover; border-radius: 6px; border: 2px solid #28a745; cursor: pointer;";
     thumb.onclick = () => selectCustomTarget(obj.name);
     container.appendChild(thumb);
 
-    // ×ボタン（個別に消す）
     const deleteBtn = document.createElement("button");
     deleteBtn.innerText = "×";
     deleteBtn.style.cssText = "position: absolute; top: -5px; right: -5px; background: #dc3545; color: #fff; border: none; border-radius: 50%; width: 20px; height: 20px; font-size: 12px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center;";
@@ -280,7 +337,6 @@ function updateRegisteredListUI() {
     };
     container.appendChild(deleteBtn);
 
-    // 名前ラベル
     const lbl = document.createElement("div");
     lbl.innerText = obj.name; 
     lbl.style.cssText = "font-size: 10px; color: #fff; margin-top: 2px;";
@@ -322,23 +378,19 @@ function cropGuideArea() {
 window.captureObject = function() {
   const canvas = cropGuideArea();
   if (!canvas) { alert("先にカメラを起動してください"); return; }
-  capturedObjects.push(canvas);
+  const dataUrl = canvas.toDataURL("image/jpeg");
+  capturedObjects.push({ canvas, dataUrl });
   document.getElementById("objCount").innerText = capturedObjects.length;
-  const img = document.createElement("img");
-  img.src = canvas.toDataURL("image/jpeg");
-  img.style.width = "40px"; img.style.height = "40px"; img.style.objectFit = "cover"; img.style.borderRadius = "4px";
-  document.getElementById("objThumbnails").appendChild(img);
+  updateObjectThumbnailsUI();
 };
 
 window.captureBackground = function() {
   const canvas = cropGuideArea();
   if (!canvas) { alert("先にカメラを起動してください"); return; }
-  capturedBackgrounds.push(canvas);
+  const dataUrl = canvas.toDataURL("image/jpeg");
+  capturedBackgrounds.push({ canvas, dataUrl });
   document.getElementById("bgCount").innerText = capturedBackgrounds.length;
-  const img = document.createElement("img");
-  img.src = canvas.toDataURL("image/jpeg");
-  img.style.width = "40px"; img.style.height = "40px"; img.style.objectFit = "cover"; img.style.borderRadius = "4px";
-  document.getElementById("bgThumbnails").appendChild(img);
+  updateBackgroundThumbnailsUI();
 };
 
 // ✂️ 手動クロップモード
@@ -431,15 +483,10 @@ window.confirmCrop = function() {
     const scaleX = capturedImageBitmap.width / cropCanvas.width;
     const scaleY = capturedImageBitmap.height / cropCanvas.height;
     cutCtx.drawImage(capturedImageBitmap, x * scaleX, y * scaleY, w * scaleX, h * scaleY, 0, 0, 224, 224);
-    capturedObjects.push(cutCanvas);
+    const dataUrl = cutCanvas.toDataURL("image/jpeg");
+    capturedObjects.push({ canvas: cutCanvas, dataUrl });
     document.getElementById("objCount").innerText = capturedObjects.length;
-    const thumbContainer = document.getElementById("objThumbnails");
-    if (thumbContainer) {
-        const img = document.createElement("img");
-        img.src = cutCanvas.toDataURL("image/jpeg");
-        img.style.width = "40px"; img.style.height = "40px"; img.style.objectFit = "cover"; img.style.borderRadius = "4px";
-        thumbContainer.appendChild(img);
-    }
+    updateObjectThumbnailsUI();
     document.getElementById('crop-section').style.display = "none";
 };
 
@@ -460,16 +507,16 @@ window.trainAndRegister = async function() {
     let objEmbeddings = [];
     let bgEmbeddings = [];
 
-    for (let objCanvas of capturedObjects) {
+    for (let item of capturedObjects) {
       tf.tidy(() => {
-        const tensor = tf.browser.fromPixels(objCanvas).toFloat().expandDims(0);
+        const tensor = tf.browser.fromPixels(item.canvas).toFloat().expandDims(0);
         const embedding = mobilenetModel.infer(tensor, true);
         objEmbeddings.push(Array.from(embedding.dataSync()));
       });
     }
-    for (let bgCanvas of capturedBackgrounds) {
+    for (let item of capturedBackgrounds) {
       tf.tidy(() => {
-        const tensor = tf.browser.fromPixels(bgCanvas).toFloat().expandDims(0);
+        const tensor = tf.browser.fromPixels(item.canvas).toFloat().expandDims(0);
         const embedding = mobilenetModel.infer(tensor, true);
         bgEmbeddings.push(Array.from(embedding.dataSync()));
       });
@@ -479,7 +526,7 @@ window.trainAndRegister = async function() {
       name: name,
       embeddings: objEmbeddings,
       backgrounds: bgEmbeddings,
-      thumbnail: capturedObjects[0].toDataURL("image/jpeg")
+      thumbnail: capturedObjects[0].dataUrl
     };
     customObjects.push(newObjectData);
 
@@ -673,26 +720,46 @@ async function predictWebcam() {
   }
 }
 
-function saveFoundImage(bbox) {
+// 🔴 【追加機能2】発見した履歴画像をタップしてプレビューする機能
+function addGalleryThumbnail(dataUrl) {
   const gallery = document.getElementById("imageGallery");
   if (!gallery) return;
-  const tempCanvas = document.createElement("canvas");
-  tempCanvas.width = bbox.width; tempCanvas.height = bbox.height;
-  tempCanvas.getContext("2d").drawImage(video, bbox.originX, bbox.originY, bbox.width, bbox.height, 0, 0, bbox.width, bbox.height);
+
   const img = document.createElement("img");
-  img.src = tempCanvas.toDataURL("image/jpeg");
-  img.style.width = "80px"; img.style.height = "80px"; img.style.objectFit = "cover"; img.style.borderRadius = "8px"; img.style.border = "2px solid #00ff00";
+  img.src = dataUrl;
+  img.style.cssText = "width: 80px; height: 80px; object-fit: cover; border-radius: 8px; border: 2px solid #00ff00; cursor: pointer; flex-shrink: 0;";
+  
+  // タップ（クリック）されたときにプレビューモーダルを開く
+  img.onclick = () => {
+    const modal = document.getElementById("imagePreviewModal");
+    const previewImg = document.getElementById("previewImage");
+    if (modal && previewImg) {
+      previewImg.src = dataUrl;
+      modal.style.display = "flex";
+    }
+  };
+
   gallery.prepend(img);
 }
 
+// プレビュー画面を閉じる関数
+window.closePreview = function() {
+  const modal = document.getElementById("imagePreviewModal");
+  if (modal) {
+    modal.style.display = "none";
+  }
+};
+
+function saveFoundImage(bbox) {
+  const tempCanvas = document.createElement("canvas");
+  tempCanvas.width = bbox.width; tempCanvas.height = bbox.height;
+  tempCanvas.getContext("2d").drawImage(video, bbox.originX, bbox.originY, bbox.width, bbox.height, 0, 0, bbox.width, bbox.height);
+  addGalleryThumbnail(tempCanvas.toDataURL("image/jpeg"));
+}
+
 function saveFoundCustomImage() {
-  const gallery = document.getElementById("imageGallery");
-  if (!gallery) return;
   const tempCanvas = document.createElement("canvas");
   tempCanvas.width = video.videoWidth; tempCanvas.height = video.videoHeight;
   tempCanvas.getContext("2d").drawImage(video, 0, 0);
-  const img = document.createElement("img");
-  img.src = tempCanvas.toDataURL("image/jpeg");
-  img.style.width = "80px"; img.style.height = "80px"; img.style.objectFit = "cover"; img.style.borderRadius = "8px"; img.style.border = "2px solid #00ff00";
-  gallery.prepend(img);
+  addGalleryThumbnail(tempCanvas.toDataURL("image/jpeg"));
 }
