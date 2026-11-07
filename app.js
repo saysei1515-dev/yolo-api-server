@@ -369,7 +369,6 @@ window.selectCustomTarget = function(name) {
   window.switchTab('search');
 };
 
-// 🔽 修正：入力欄が空のときにカメラを起動できないようにバリデーションを追加
 window.startCamera = function() {
   const inputVal = document.getElementById("targetObject").value.trim();
   if (!inputVal) {
@@ -379,7 +378,7 @@ window.startCamera = function() {
   }
 
   if (!conn || !conn.open) { alert("先にPCと接続してください！"); return; }
-  
+
   currentSearchWord = inputVal.toLowerCase();
   conn.send({ action: 'start', keyword: currentSearchWord, smartphoneId: peer.id });
   status.innerText = "ステータス: 遠隔カメラ起動要求を送信中...";
@@ -433,7 +432,6 @@ window.setAspectRatio = function(type) {
   }
 };
 
-// 全体リセット機能
 window.clearCustomModel = function() {
   if (!confirm("登録したすべての物体データとモデルを消去しますか？")) return;
   customObjects = [];
@@ -463,7 +461,6 @@ window.clearCustomModel = function() {
   document.getElementById("regStatus").style.color = "#ff4444";
 };
 
-// 登録済み物体の個別削除（×ボタン）
 window.removeCustomObject = function(index) {
   const removedObj = customObjects[index];
   customObjects.splice(index, 1);
@@ -489,7 +486,7 @@ window.removeCustomObject = function(index) {
     activeCustomName = "";
     document.getElementById("modelSelect").value = "lite0";
     const customOption = document.getElementById("modelSelect").querySelector('option[value="custom"]');
-    if (customOption) customOption.remove();
+    if (customOption) { customOption.remove(); }
     const quickSelectList = document.getElementById("quickSelectList");
     if (quickSelectList) quickSelectList.innerHTML = "";
   } else {
@@ -501,21 +498,18 @@ window.removeCustomObject = function(index) {
   document.getElementById("regStatus").style.color = "#ffc107";
 };
 
-// 撮影中の「背景写真」の個別削除
 window.removeBackgroundPhoto = function(index) {
   capturedBackgrounds.splice(index, 1);
   document.getElementById("bgCount").innerText = capturedBackgrounds.length;
   updateBackgroundThumbnailsUI();
 };
 
-// 撮影中の「物体写真」の個別削除
 window.removeObjectPhoto = function(index) {
   capturedObjects.splice(index, 1);
   document.getElementById("objCount").innerText = capturedObjects.length;
   updateObjectThumbnailsUI();
 };
 
-// 物体サムネイルのUI再描画
 function updateObjectThumbnailsUI() {
   const thumbContainer = document.getElementById("objThumbnails");
   thumbContainer.innerHTML = "";
@@ -538,7 +532,6 @@ function updateObjectThumbnailsUI() {
   });
 }
 
-// 背景サムネイルのUI再描画
 function updateBackgroundThumbnailsUI() {
   const bgContainer = document.getElementById("bgThumbnails");
   bgContainer.innerHTML = "";
@@ -561,13 +554,11 @@ function updateBackgroundThumbnailsUI() {
   });
 }
 
-// ✏️ 編集モードに入る関数
 window.startEditingObject = function(index) {
   editingObjectIndex = index;
   const obj = customObjects[index];
   document.getElementById("registerName").value = obj.name;
 
-  // 1. 保存されているすべての「物体写真（thumbnails）」を復元
   capturedObjects = [];
   const objThumbList = obj.thumbnails || (obj.thumbnail ? [obj.thumbnail] : []);
   if (objThumbList.length > 0) {
@@ -588,7 +579,6 @@ window.startEditingObject = function(index) {
     document.getElementById("objThumbnails").innerHTML = "";
   }
 
-  // 2. 保存されているすべての「背景写真」を復元
   capturedBackgrounds = [];
   const bgThumbList = obj.backgroundThumbnails || [];
   if (bgThumbList.length > 0) {
@@ -616,7 +606,6 @@ window.startEditingObject = function(index) {
   document.getElementById("registerName").scrollIntoView({ behavior: 'smooth' });
 };
 
-// 編集モードを終了する関数
 window.cancelEditingObject = function() {
   if (editingObjectIndex !== null) {
     const objName = customObjects[editingObjectIndex].name;
@@ -635,7 +624,6 @@ window.cancelEditingObject = function() {
   }
 };
 
-// 登録リストのUI更新
 function updateRegisteredListUI() {
   const registeredList = document.getElementById("registeredList");
   if (!registeredList) return;
@@ -736,7 +724,6 @@ window.captureBackground = function() {
   updateBackgroundThumbnailsUI();
 };
 
-// ✂️ 手動クロップモード
 let capturedImageBitmap = null;
 let isDrawing = false;
 let startX = 0, startY = 0, endX = 0, endY = 0;
@@ -837,11 +824,10 @@ window.cancelCrop = function() {
     document.getElementById('crop-section').style.display = "none";
 };
 
-// ⚡ 【精度向上・自動回転(データ拡張)】AI特徴量ベクトル抽出・登録 / 更新処理
 window.trainAndRegister = async function() {
   const name = document.getElementById("registerName").value.trim().toLowerCase();
   if (!name) { alert("登録する物体名を入力してください！"); return; }
-  
+
   if (capturedObjects.length === 0) { 
     alert("物体を1枚以上撮影してください！"); 
     return; 
@@ -916,7 +902,7 @@ window.trainAndRegister = async function() {
       alert(`「${name}」の登録が完了しました！`);
     }
 
-    saveCustomObjectsToStorage(); // 💾 ストレージに永続保存
+    saveCustomObjectsToStorage();
 
     activeCustomName = name;
     const modelSelect = document.getElementById("modelSelect");
@@ -953,7 +939,7 @@ function calculateCosineSimilarity(vecA, vecB) {
   return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
-// ================= リアルタイム推論ループ =================
+// ================= リアルタイム推論ループ（最適化・遠くの物体対応版） =================
 async function predictWebcam() {
   if (!webcamRunning) return;
 
@@ -975,7 +961,6 @@ async function predictWebcam() {
       // 【カスタム検知モード】
       if (useCustomModel && customObjects.length > 0 && mobilenetModel && objectDetector) {
         const targetCustomObjs = customObjects.filter(obj => obj.name.toLowerCase() === currentSearchWord.toLowerCase());
-
         const detections = objectDetector.detectForVideo(video, performance.now());
 
         if (detections && detections.detections && targetCustomObjs.length > 0) {
@@ -989,7 +974,8 @@ async function predictWebcam() {
             const width = bbox.width;
             const height = bbox.height;
 
-            if (width < 20 || height < 20) continue;
+            // 💡 遠くの小さな物体も検出できるよう、15px未満の極小ノイズのみ除外
+            if (width < 15 || height < 15) continue;
 
             const cropCanvas = document.createElement("canvas");
             cropCanvas.width = 224;
@@ -1014,13 +1000,17 @@ async function predictWebcam() {
               }
 
               let maxBgSimilarity = 0;
-              for (let bgEmb of obj.backgrounds) {
-                const bgSimilarity = calculateCosineSimilarity(currentEmbedding, bgEmb);
-                if (bgSimilarity > maxBgSimilarity) maxBgSimilarity = bgSimilarity;
+              if (obj.backgrounds && obj.backgrounds.length > 0) {
+                for (let bgEmb of obj.backgrounds) {
+                  const bgSimilarity = calculateCosineSimilarity(currentEmbedding, bgEmb);
+                  if (bgSimilarity > maxBgSimilarity) maxBgSimilarity = bgSimilarity;
+                }
               }
 
-              const threshold = 0.3;
-              if (maxObjSimilarity >= threshold && maxObjSimilarity > maxBgSimilarity) {
+              const similarityThreshold = 0.38;
+              const bgMargin = 0.08;
+
+              if (maxObjSimilarity >= similarityThreshold && (maxObjSimilarity - maxBgSimilarity) > bgMargin) {
                 if (maxObjSimilarity > maxOverallSimilarity) {
                   maxOverallSimilarity = maxObjSimilarity;
                   bestMatchName = obj.name;
@@ -1108,7 +1098,6 @@ async function predictWebcam() {
   }
 }
 
-// 発見した履歴画像をタップしてプレビューする機能
 function addGalleryThumbnail(dataUrl) {
   const gallery = document.getElementById("imageGallery");
   if (!gallery) return;
@@ -1129,7 +1118,6 @@ function addGalleryThumbnail(dataUrl) {
   gallery.prepend(img);
 }
 
-// プレビュー画面を閉じる関数
 window.closePreview = function() {
   const modal = document.getElementById("imagePreviewModal");
   if (modal) {
