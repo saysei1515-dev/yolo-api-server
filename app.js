@@ -939,7 +939,7 @@ function calculateCosineSimilarity(vecA, vecB) {
   return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
-// ================= リアルタイム推論ループ（最適化・遠くの物体対応版） =================
+// ================= リアルタイム推論ループ（バランス調整・感度改善版） =================
 async function predictWebcam() {
   if (!webcamRunning) return;
 
@@ -974,7 +974,7 @@ async function predictWebcam() {
             const width = bbox.width;
             const height = bbox.height;
 
-            // 💡 遠くの小さな物体も検出できるよう、15px未満の極小ノイズのみ除外
+            // 遠くの小さな物体も拾えるよう15px未満のみ除外
             if (width < 15 || height < 15) continue;
 
             const cropCanvas = document.createElement("canvas");
@@ -1007,10 +1007,14 @@ async function predictWebcam() {
                 }
               }
 
-              const similarityThreshold = 0.38;
-              const bgMargin = 0.08;
+              // 🎯 バランス調整済みの判定条件（しきい値0.33、マージン0.03、背景救済0.25未経験）
+              const similarityThreshold = 0.33; 
+              const bgMargin = 0.03;          
 
-              if (maxObjSimilarity >= similarityThreshold && (maxObjSimilarity - maxBgSimilarity) > bgMargin) {
+              const isObjValid = maxObjSimilarity >= similarityThreshold;
+              const isNotBackground = (maxObjSimilarity - maxBgSimilarity > bgMargin) || (maxBgSimilarity < 0.25);
+
+              if (isObjValid && isNotBackground) {
                 if (maxObjSimilarity > maxOverallSimilarity) {
                   maxOverallSimilarity = maxObjSimilarity;
                   bestMatchName = obj.name;
@@ -1047,7 +1051,7 @@ async function predictWebcam() {
         }
 
       } else if (objectDetector) {
-        // 【標準モデルモード（Lite0 / Lite2）】
+        // 【標準モデルモード】
         const detections = objectDetector.detectForVideo(video, performance.now());
         if (detections && detections.detections) {
           const scaleX = canvas.width / video.videoWidth;
